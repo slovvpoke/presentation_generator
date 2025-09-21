@@ -31,13 +31,33 @@ from sfapps_template_generator import (
     AppMetadata
 )
 
-# Импорт финального парсера
+# Импорт улучшенного Selenium парсера (приоритетный)
+try:
+    from improved_selenium_parser import parse_appexchange_improved
+    IMPROVED_SELENIUM_AVAILABLE = True
+    print("✅ Улучшенный Selenium парсер доступен")
+except ImportError:
+    IMPROVED_SELENIUM_AVAILABLE = False
+    print("⚠️ Улучшенный Selenium парсер недоступен")
+
+# Импорт простого Selenium парсера (резервный)
+try:
+    from simple_parser import parse_appexchange_simple
+    SELENIUM_PARSER_AVAILABLE = True
+    print("✅ Простой Selenium парсер доступен")
+except ImportError:
+    SELENIUM_PARSER_AVAILABLE = False
+    print("⚠️ Простой Selenium парсер недоступен")
+
+# Импорт финального парсера (резервный)
 try:
     from final_parser import parse_appexchange_app
     FINAL_PARSER_AVAILABLE = True
+    print("✅ Финальный парсер доступен")
 except ImportError:
     from sfapps_template_generator import fetch_app_metadata
     FINAL_PARSER_AVAILABLE = False
+    print("⚠️ Финальный парсер недоступен")
 
 app = Flask(__name__)
 app.secret_key = 'sfapps-presentation-generator-secret-key-2025'
@@ -59,19 +79,96 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def fetch_app_metadata_with_fallback(url: str) -> Optional[AppMetadata]:
-    """Получение метаданных с использованием финального парсера"""
+    """Получение метаданных с приоритетом на улучшенный Selenium парсер"""
     
+    # Приоритет 1: Улучшенный Selenium парсер (для динамических страниц)
+    if IMPROVED_SELENIUM_AVAILABLE:
+        try:
+            print(f"🔄 Используем улучшенный Selenium парсер для {url}")
+            result = parse_appexchange_improved(url)
+            
+            if result and result.get('success'):
+                # Конвертируем в формат AppMetadata
+                name = result.get('name', 'Unknown App')
+                developer = result.get('developer', 'Unknown Developer')
+                logo_bytes = b''
+                logo_mime = 'image/png'
+                
+                # Загружаем изображение если есть URL
+                logo_url = result.get('logo_url')
+                if logo_url:
+                    try:
+                        import requests
+                        response = requests.get(logo_url, timeout=10)
+                        if response.status_code == 200:
+                            logo_bytes = response.content
+                            logo_mime = response.headers.get('content-type', 'image/png')
+                    except Exception as e:
+                        print(f"Ошибка загрузки логотипа: {e}")
+                
+                metadata = AppMetadata(
+                    url=url,
+                    name=name,
+                    developer=developer,
+                    logo_bytes=logo_bytes,
+                    logo_mime=logo_mime
+                )
+                
+                print(f"✅ Улучшенный Selenium парсер: {metadata.name} by {metadata.developer}")
+                return metadata
+        except Exception as e:
+            print(f"⚠️ Ошибка в улучшенном Selenium парсере: {e}")
+    
+    # Приоритет 2: Простой Selenium парсер (резервный)
+    if SELENIUM_PARSER_AVAILABLE:
+        try:
+            print(f"🔄 Используем простой Selenium парсер для {url}")
+            result = parse_appexchange_simple(url)
+            
+            if result and result.get('success'):
+                # Конвертируем в формат AppMetadata
+                name = result.get('name', 'Unknown App')
+                developer = result.get('developer', 'Unknown Developer')
+                logo_bytes = b''
+                logo_mime = 'image/png'
+                
+                # Загружаем изображение если есть URL
+                logo_url = result.get('logo_url')
+                if logo_url:
+                    try:
+                        import requests
+                        response = requests.get(logo_url, timeout=10)
+                        if response.status_code == 200:
+                            logo_bytes = response.content
+                            logo_mime = response.headers.get('content-type', 'image/png')
+                    except Exception as e:
+                        print(f"Ошибка загрузки логотипа: {e}")
+                
+                metadata = AppMetadata(
+                    url=url,
+                    name=name,
+                    developer=developer,
+                    logo_bytes=logo_bytes,
+                    logo_mime=logo_mime
+                )
+                
+                print(f"✅ Простой Selenium парсер: {metadata.name} by {metadata.developer}")
+                return metadata
+        except Exception as e:
+            print(f"⚠️ Ошибка в простом Selenium парсере: {e}")
+    
+    # Приоритет 3: Финальный парсер (резервный)
     if FINAL_PARSER_AVAILABLE:
         try:
-            # Используем новый финальный парсер
+            print(f"🔄 Используем финальный парсер для {url}")
             result = parse_appexchange_app(url)
             
             if result and result.get('name') != 'Unknown App':
                 # Конвертируем в формат AppMetadata
-                metadata = AppMetadata()
-                metadata.url = url
-                metadata.name = result.get('name', 'Unknown App')
-                metadata.developer = result.get('developer', 'Unknown Developer')
+                name = result.get('name', 'Unknown App')
+                developer = result.get('developer', 'Unknown Developer')
+                logo_bytes = b''
+                logo_mime = 'image/png'
                 
                 # Загружаем изображение если есть URL
                 image_url = result.get('image_url')
@@ -80,36 +177,44 @@ def fetch_app_metadata_with_fallback(url: str) -> Optional[AppMetadata]:
                         import requests
                         response = requests.get(image_url, timeout=10)
                         if response.status_code == 200:
-                            metadata.logo_bytes = response.content
-                            metadata.logo_mime = response.headers.get('content-type', 'image/png')
-                        else:
-                            metadata.logo_bytes = b''
-                            metadata.logo_mime = 'image/png'
+                            logo_bytes = response.content
+                            logo_mime = response.headers.get('content-type', 'image/png')
                     except:
-                        metadata.logo_bytes = b''
-                        metadata.logo_mime = 'image/png'
-                else:
-                    metadata.logo_bytes = b''
-                    metadata.logo_mime = 'image/png'
+                        pass
                 
+                metadata = AppMetadata(
+                    url=url,
+                    name=name,
+                    developer=developer,
+                    logo_bytes=logo_bytes,
+                    logo_mime=logo_mime
+                )
+                
+                print(f"✅ Финальный парсер: {metadata.name} by {metadata.developer}")
                 return metadata
         except Exception as e:
-            print(f"Ошибка в финальном парсере: {e}")
+            print(f"⚠️ Ошибка в финальном парсере: {e}")
     
-    # Fallback на оригинальный парсер
+    # Приоритет 4: Оригинальный парсер (последний резерв)
     try:
+        print(f"🔄 Используем оригинальный парсер для {url}")
         from sfapps_template_generator import fetch_app_metadata
-        return fetch_app_metadata(url)
+        metadata = fetch_app_metadata(url)
+        if metadata:
+            print(f"✅ Оригинальный парсер: {metadata.name} by {metadata.developer}")
+            return metadata
     except Exception as e:
-        print(f"Ошибка в fallback парсере: {e}")
+        print(f"⚠️ Ошибка в оригинальном парсере: {e}")
     
     # Создаем заглушку, чтобы пользователь мог ввести данные вручную
-    metadata = AppMetadata()
-    metadata.url = url
-    metadata.name = "Не удалось загрузить название"
-    metadata.developer = "Не удалось загрузить разработчика"
-    metadata.logo_bytes = b''
-    metadata.logo_mime = 'image/png'
+    print(f"❌ Все парсеры не смогли обработать {url}")
+    metadata = AppMetadata(
+        url=url,
+        name="Не удалось загрузить название",
+        developer="Не удалось загрузить разработчика",
+        logo_bytes=b'',
+        logo_mime='image/png'
+    )
     return metadata
 
 def save_uploaded_file(file):
@@ -223,7 +328,7 @@ def create_preview_data(industry, app_links, final_url, overrides):
         
         preview_slides.append({
             'title': f'Приложение #{slide_num}',
-            'content': f'<h5>{name}</h5><p>By {developer}</p><small class="text-muted">{link}</small>',
+            'content': f'<h5>{name}</h5><p>{developer}</p><small class="text-muted">{link}</small>',
             'image': logo_data
         })
     
@@ -357,7 +462,7 @@ if __name__ == '__main__':
     print("Запуск SFApps Presentation Generator...")
     print("📁 Рабочая директория:", os.getcwd())
     print("📄 Шаблон:", "Copy of SFApps.info Best Apps Presentation Template.pptx")
-    print("🌐 Открыть в браузере: http://127.0.0.1:5000")
+    print("🌐 Открыть в браузере: http://localhost:5001")
     print("-" * 50)
     
-    app.run(debug=True, host='127.0.0.1', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5001)
