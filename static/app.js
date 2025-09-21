@@ -218,13 +218,8 @@ document.getElementById('presentationForm').addEventListener('submit', function(
     e.preventDefault();
     
     const container = document.getElementById('linksContainer');
-    if (container.children.length < 5) {
-        alert('Необходимо минимум 5 ссылок для создания презентации');
-        return;
-    }
-    
-    if (container.children.length > 20) {
-        alert('Максимальное количество ссылок: 20');
+    if (container.children.length < 1) {
+        alert('Необходимо минимум 1 ссылку для создания презентации');
         return;
     }
     
