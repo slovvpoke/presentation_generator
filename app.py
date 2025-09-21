@@ -31,13 +31,13 @@ from sfapps_template_generator import (
     AppMetadata
 )
 
-# Импорт улучшенного парсера
+# Импорт финального парсера
 try:
-    from enhanced_parser import enhanced_fetch_app_metadata
-    ENHANCED_PARSER_AVAILABLE = True
+    from final_parser import parse_appexchange_app
+    FINAL_PARSER_AVAILABLE = True
 except ImportError:
     from sfapps_template_generator import fetch_app_metadata
-    ENHANCED_PARSER_AVAILABLE = False
+    FINAL_PARSER_AVAILABLE = False
 
 app = Flask(__name__)
 app.secret_key = 'sfapps-presentation-generator-secret-key-2025'
@@ -59,34 +59,58 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def fetch_app_metadata_with_fallback(url: str) -> Optional[AppMetadata]:
-    """Получение метаданных с использованием улучшенного парсера и fallback"""
+    """Получение метаданных с использованием финального парсера"""
     
-    if ENHANCED_PARSER_AVAILABLE:
-        # Сначала пробуем без Selenium
-        metadata = enhanced_fetch_app_metadata(url, use_selenium=False)
-        if metadata and metadata.name and metadata.name != 'Unknown App':
-            return metadata
-        
-        # Затем пробуем с Selenium
-        metadata = enhanced_fetch_app_metadata(url, use_selenium=True)
-        if metadata and metadata.name and metadata.name != 'Unknown App':
-            return metadata
+    if FINAL_PARSER_AVAILABLE:
+        try:
+            # Используем новый финальный парсер
+            result = parse_appexchange_app(url)
+            
+            if result and result.get('name') != 'Unknown App':
+                # Конвертируем в формат AppMetadata
+                metadata = AppMetadata()
+                metadata.url = url
+                metadata.name = result.get('name', 'Unknown App')
+                metadata.developer = result.get('developer', 'Unknown Developer')
+                
+                # Загружаем изображение если есть URL
+                image_url = result.get('image_url')
+                if image_url:
+                    try:
+                        import requests
+                        response = requests.get(image_url, timeout=10)
+                        if response.status_code == 200:
+                            metadata.logo_bytes = response.content
+                            metadata.logo_mime = response.headers.get('content-type', 'image/png')
+                        else:
+                            metadata.logo_bytes = b''
+                            metadata.logo_mime = 'image/png'
+                    except:
+                        metadata.logo_bytes = b''
+                        metadata.logo_mime = 'image/png'
+                else:
+                    metadata.logo_bytes = b''
+                    metadata.logo_mime = 'image/png'
+                
+                return metadata
+        except Exception as e:
+            print(f"Ошибка в финальном парсере: {e}")
     
     # Fallback на оригинальный парсер
     try:
         from sfapps_template_generator import fetch_app_metadata
         return fetch_app_metadata(url)
-    except:
-        pass
+    except Exception as e:
+        print(f"Ошибка в fallback парсере: {e}")
     
     # Создаем заглушку, чтобы пользователь мог ввести данные вручную
-    return AppMetadata(
-        url=url,
-        name="Не удалось загрузить название",
-        developer="Не удалось загрузить разработчика", 
-        logo_bytes=b'',
-        logo_mime='image/png'
-    )
+    metadata = AppMetadata()
+    metadata.url = url
+    metadata.name = "Не удалось загрузить название"
+    metadata.developer = "Не удалось загрузить разработчика"
+    metadata.logo_bytes = b''
+    metadata.logo_mime = 'image/png'
+    return metadata
 
 def save_uploaded_file(file):
     """Сохранение загруженного файла и возврат пути"""

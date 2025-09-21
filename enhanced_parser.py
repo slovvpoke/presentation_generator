@@ -93,8 +93,44 @@ class EnhancedAppExchangeParser:
                     EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
                 
+                # Попытка закрыть cookie баннер
+                try:
+                    # Ищем кнопки для закрытия cookie баннера
+                    cookie_buttons = [
+                        '[data-testid="cookie-accept"]',
+                        '[data-testid="accept-cookies"]', 
+                        'button[class*="cookie"]',
+                        'button:contains("Accept")',
+                        'button:contains("OK")',
+                        '.cookie-banner button',
+                        '#cookie-banner button'
+                    ]
+                    
+                    for selector in cookie_buttons:
+                        try:
+                            button = WebDriverWait(self.driver, 2).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                            )
+                            button.click()
+                            print(f"Закрыт cookie баннер: {selector}")
+                            time.sleep(1)
+                            break
+                        except:
+                            continue
+                except:
+                    pass  # Игнорируем если cookie баннер не найден
+                
                 # Дополнительная пауза для загрузки динамического контента
-                time.sleep(3)
+                time.sleep(8)  # Увеличим время ожидания
+                
+                # Попробуем прокрутить страницу для триггера загрузки контента
+                try:
+                    self.driver.execute_script("window.scrollTo(0, 500);")
+                    time.sleep(2)
+                    self.driver.execute_script("window.scrollTo(0, 0);")
+                    time.sleep(2)
+                except:
+                    pass
                 
                 return self.driver.page_source
                 
@@ -122,19 +158,21 @@ class EnhancedAppExchangeParser:
         name, developer, logo_url = self._extract_from_css_selectors(soup)
         print(f"CSS селекторы: name='{name}', developer='{developer}', logo_url='{logo_url}'")
         
-        # Стратегия 2: Поиск в JSON данных (если CSS не сработал)
+        # Стратегия 2: OpenGraph и мета-теги (для большинства AppExchange страниц)
         if not all([name, developer, logo_url]):
-            name2, developer2, logo_url2 = self._extract_from_json(soup)
+            name2, developer2, logo_url2 = self._extract_from_meta_tags(soup)
             name = name or name2
             developer = developer or developer2
             logo_url = logo_url or logo_url2
+            print(f"Meta теги: name='{name}', developer='{developer}', logo_url='{logo_url}'")
         
-        # Стратегия 3: OpenGraph метаданные (финальный fallback)
+        # Стратегия 3: Поиск в JSON данных (если предыдущие не сработали)
         if not all([name, developer, logo_url]):
-            name3, developer3, logo_url3 = self._extract_from_meta_tags(soup)
+            name3, developer3, logo_url3 = self._extract_from_json(soup)
             name = name or name3
             developer = developer or developer3
             logo_url = logo_url or logo_url3
+            print(f"JSON данные: name='{name}', developer='{developer}', logo_url='{logo_url}'")
         
         return name, developer, logo_url
     
@@ -220,46 +258,50 @@ class EnhancedAppExchangeParser:
         developer = None
         logo_url = None
         
-        # Расширенные селекторы для названия
+        # Правильные селекторы для названия (более специфичные)
         name_selectors = [
             '.listing-title h1',
-            'h1[data-test-id="listing-title"]',
-            'h1.listing-header__title',
-            '[data-testid="listing-title"]',
-            '.app-title',
-            '.listing-name',
-            '.page-header h1',
-            '.solution-title',
-            '[data-cy="listing-title"]'
+            'h1[type="style"]', 
+            'main h1',
+            '.app-title h1',
+            'h1:not([class*="cookie"])',  # Исключаем cookie элементы
+            'h1'
         ]
         
         for selector in name_selectors:
             element = soup.select_one(selector)
             if element:
                 text = element.get_text().strip()
-                if text:  # Убеждаемся что текст не пустой
+                # Пропускаем cookie сообщения и короткие названия
+                if (text and 
+                    len(text) > 5 and  # Не слишком короткое
+                    'cookie' not in text.lower() and 
+                    'privacy' not in text.lower()):
                     name = text
                     print(f"Найдено название через селектор '{selector}': {name}")
                     break
         
-        # Расширенные селекторы для разработчика
+        # Правильные селекторы для разработчика (избегаем cookie banner)
         dev_selectors = [
-            '.listing-title p',
-            '[data-test-id="listing-publisher"]',
-            '.listing-header__publisher',
-            '[data-testid="listing-publisher"]',
-            '.app-publisher',
-            '.listing-publisher',
-            '.publisher-name',
-            '.solution-publisher',
-            '[data-cy="listing-publisher"]'
+            '.listing-title p',  # Сначала более специфичные
+            'p[type="style"]',
+            '.listing-header p',
+            '.app-details p',
+            'main p',  # В основном контенте
+            'div:not([class*="cookie"]) p'  # Исключаем cookie элементы
         ]
         
         for selector in dev_selectors:
             element = soup.select_one(selector)
             if element:
                 dev_text = element.get_text().strip()
-                if dev_text:  # Убеждаемся что текст не пустой
+                # Пропускаем cookie сообщения и прочий мусор
+                if (dev_text and 
+                    len(dev_text) < 200 and  # Не слишком длинный текст
+                    'cookie' not in dev_text.lower() and 
+                    'privacy' not in dev_text.lower() and
+                    'statement' not in dev_text.lower()):
+                    
                     if dev_text.lower().startswith('by '):
                         developer = dev_text[3:].strip()
                     else:
@@ -267,17 +309,13 @@ class EnhancedAppExchangeParser:
                     print(f"Найден разработчик через селектор '{selector}': {developer}")
                     break
         
-        # Расширенные селекторы для логотипа
+        # Правильные селекторы для логотипа (по структуре HTML)
         logo_selectors = [
-            '.summary .listing-logo .ads-image',
-            '[data-test-id="listing-logo"] img',
-            '.listing-header__logo img',
-            '[data-testid="listing-logo"] img',
-            '.app-logo img',
+            'img.ads-image',  # Точно как показано в HTML справа
+            '.ads-image',
             '.listing-logo img',
-            '.solution-logo img',
-            '.publisher-logo img',
-            '[data-cy="listing-logo"] img'
+            '.summary img',
+            'img[class*="ads-image"]'
         ]
         
         for selector in logo_selectors:

@@ -103,14 +103,12 @@ def _extract_from_html(html: str) -> Tuple[Optional[str], Optional[str], Optiona
     logo = None
     
     # Try CSS selectors first (most reliable for AppExchange)
-    # Try various selectors for app name
+    # Правильные селекторы для названия (по структуре HTML)
     name_selectors = [
+        'h1[type="style"]',  # Видно в HTML справа
         '.listing-title h1',
-        'h1[data-test-id="listing-title"]',
-        'h1.listing-header__title',
-        '[data-testid="listing-title"]',
-        '.app-title',
-        '.listing-name'
+        'h1',
+        '[data-testid="listing-title"]'
     ]
     for selector in name_selectors:
         element = soup.select_one(selector)
@@ -121,14 +119,12 @@ def _extract_from_html(html: str) -> Tuple[Optional[str], Optional[str], Optiona
                 print(f"Найдено название через селектор '{selector}': {name}")
                 break
 
-    # Try various selectors for developer
+    # Правильные селекторы для разработчика (по структуре HTML)
     dev_selectors = [
+        'p[type="style"]',  # Видно в HTML справа - "By TaskRay"
         '.listing-title p',
-        '[data-test-id="listing-publisher"]',
-        '.listing-header__publisher',
-        '[data-testid="listing-publisher"]',
-        '.app-publisher',
-        '.listing-publisher'
+        'p',
+        '[data-testid="listing-publisher"]'
     ]
     for selector in dev_selectors:
         element = soup.select_one(selector)
@@ -143,14 +139,13 @@ def _extract_from_html(html: str) -> Tuple[Optional[str], Optional[str], Optiona
                 print(f"Найден разработчик через селектор '{selector}': {dev}")
                 break
 
-    # Try various selectors for logo
+    # Правильные селекторы для логотипа (по структуре HTML)
     logo_selectors = [
-        '.summary .listing-logo .ads-image',
-        '[data-test-id="listing-logo"] img',
-        '.listing-header__logo img',
-        '[data-testid="listing-logo"] img',
-        '.app-logo img',
-        '.listing-logo img'
+        'img.ads-image',  # Точно как показано в HTML справа
+        '.ads-image',
+        '.listing-logo img',
+        '.summary img',
+        'img[class*="ads-image"]'
     ]
     for selector in logo_selectors:
         element = soup.select_one(selector)
