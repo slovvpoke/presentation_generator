@@ -418,6 +418,95 @@ def _remove_slide(prs: Presentation, index: int) -> None:
         prs.part.drop_rel(relId)
 
 
+def _calculate_text_width(text, font_size, font_name='Poppins', bold=False):
+    """Calculate approximate text width in points"""
+    # Character width ratios for different fonts (approximate values)
+    font_ratios = {
+        'Poppins': 0.6 if not bold else 0.65,
+        'Arial': 0.55 if not bold else 0.6,
+        'Times New Roman': 0.5 if not bold else 0.55,
+    }
+    
+    # Use Poppins ratio as default if font not found
+    ratio = font_ratios.get(font_name, 0.6)
+    
+    # Calculate base width: chars * font_size * ratio
+    base_width = len(text) * font_size * ratio
+    
+    # Add padding (about 20% for comfortable spacing)
+    padding = base_width * 0.2
+    
+    return base_width + padding
+
+
+def _update_developer_background(slide, text_left, text_top, text_height, target_width):
+    """
+    Find and update the blue background shape behind developer text
+    
+    Parameters
+    ----------
+    slide: pptx.slide.Slide
+        The slide containing the shapes
+    text_left: int
+        Left position of the text field (in EMU)
+    text_top: int
+        Top position of the text field (in EMU)
+    text_height: int
+        Height of the text field (in EMU)
+    target_width: float
+        Target width in points
+    """
+    from pptx.dml.color import RGBColor
+    from pptx.util import Pt
+    
+    print(f"   🔍 Searching for blue background near developer text...")
+    print(f"      Text position: left={text_left/914400:.1f}in, top={text_top/914400:.1f}in")
+    
+    target_width_emu = Pt(target_width).emu
+    tolerance = Pt(50).emu  # 50pt tolerance for position matching
+    
+    for idx, shape in enumerate(slide.shapes):
+        # Skip text frames
+        if shape.has_text_frame:
+            continue
+            
+        # Check if shape is close to text position (likely background)
+        left_diff = abs(shape.left - text_left)
+        top_diff = abs(shape.top - text_top)
+        height_diff = abs(shape.height - text_height)
+        
+        # Must be close in position and similar height
+        if left_diff < tolerance and top_diff < tolerance and height_diff < tolerance:
+            print(f"      Found potential background shape [{idx}]:")
+            print(f"        Position: left={shape.left/914400:.1f}in, top={shape.top/914400:.1f}in")
+            print(f"        Size: {shape.width/914400:.1f}in x {shape.height/914400:.1f}in")
+            
+            # Check if it has a blue-ish fill color
+            try:
+                if hasattr(shape, 'fill') and hasattr(shape.fill, 'fore_color'):
+                    fill_color = shape.fill.fore_color
+                    if hasattr(fill_color, 'rgb'):
+                        r, g, b = fill_color.rgb.r, fill_color.rgb.g, fill_color.rgb.b
+                        print(f"        Fill color: RGB({r}, {g}, {b})")
+                        
+                        # Check for light blue colors (typical background colors)
+                        if (150 <= r <= 255 and 180 <= g <= 255 and 200 <= b <= 255) or \
+                           (0 <= r <= 100 and 180 <= g <= 255 and 220 <= b <= 255):
+                            print(f"        ✅ Identified as blue background - updating width")
+                            shape.width = target_width_emu
+                            print(f"        📏 Background width updated to: {target_width:.1f}pt")
+                            return
+            except Exception as e:
+                print(f"        ⚠️ Could not check fill color: {e}")
+                # If we can't check color but position matches, assume it's the background
+                print(f"        🔄 Assuming background based on position - updating width")
+                shape.width = target_width_emu
+                print(f"        📏 Background width updated to: {target_width:.1f}pt")
+                return
+    
+    print(f"      ❌ No blue background shape found near developer text")
+
+
 def _find_logo_shape(slide) -> Optional[int]:
     """
     Given a slide, attempt to identify the picture shape that contains
@@ -525,10 +614,30 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
                     run.font.color.rgb = RGBColor(0x3c, 0xc0, 0xff)
             # Vertical alignment to middle
             shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-            # Set minimum width to 200px (approximately 150pt)
-            min_width_pt = 150  # 200px ≈ 150pt
-            if shape.width < Pt(min_width_pt):
-                shape.width = Pt(min_width_pt)
+            
+            # Calculate optimal width based on text content
+            calculated_width = _calculate_text_width(app.developer, 27, 'Poppins', bold=False)
+            min_width_pt = 150  # Minimum width for visual consistency
+            max_width_pt = 400  # Maximum width to prevent overly wide fields
+            
+            # Use calculated width but respect min/max boundaries
+            optimal_width = max(min_width_pt, min(calculated_width, max_width_pt))
+            
+            # Store developer text position for background adaptation
+            dev_text_left = shape.left
+            dev_text_top = shape.top
+            dev_text_height = shape.height
+            
+            # Update text field width
+            shape.width = Pt(optimal_width)
+            
+            # Find and update blue background shape
+            _update_developer_background(slide, dev_text_left, dev_text_top, dev_text_height, optimal_width)
+            
+            print(f"   📏 Developer field sizing:")
+            print(f"      Text: '{app.developer}' ({len(app.developer)} chars)")
+            print(f"      Calculated width: {calculated_width:.1f}pt")
+            print(f"      Applied width: {optimal_width:.1f}pt")
             continue
         # Replace the template app name – only the first occurrence
         if not replaced_name and text.strip():

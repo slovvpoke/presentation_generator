@@ -282,18 +282,21 @@ def process_form_data(form_data, files):
     industry = form_data.get('industry', '').strip()
     final_url = form_data.get('final_url', '').strip()
 
-    # Get lists (arrays from frontend)
-    app_links = [link.strip() for link in form_data.getlist('app_links[]') if link.strip()]
-    app_names = form_data.getlist('app_names[]')
-    app_developers = form_data.getlist('app_developers[]')
-    app_logos = files.getlist('app_logos[]')
+    # Get links from textarea (one per line)
+    app_links_text = form_data.get('app_links', '').strip()
+    app_links = [link.strip() for link in app_links_text.split('\n') if link.strip()]
+    
+    # Override arrays are removed for now (will be empty)
+    app_names = []
+    app_developers = []  
+    app_logos = []
 
     if len(app_links) < 1:
         raise ValueError("At least 1 application link required")
     if len(app_links) > 50:
         raise ValueError("Maximum number of links: 50 (for performance)")
 
-    # Only manual user overrides
+    # Only manual user overrides (currently disabled)
     overrides: Dict[str, Dict[str, Any]] = {}
     for i, link in enumerate(app_links):
         od: Dict[str, Any] = {}

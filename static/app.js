@@ -1,79 +1,33 @@
-let linkCounter = 1;
-
-function addLink() {
-    const container = document.getElementById('linksContainer');
-    const linkDiv = document.createElement('div');
-    linkDiv.className = 'link-item';
-    linkDiv.setAttribute('data-index', linkCounter);
+// Link counter functionality
+function updateLinkCounter() {
+    const textarea = document.getElementById('app_links');
+    const counter = document.getElementById('link-counter');
     
-    linkDiv.innerHTML = `
-        <div class="row">
-            <div class="col-md-8">
-                <input type="url" class="form-control" name="app_links[]" 
-                       placeholder="https://appexchange.salesforce.com/..." required>
-            </div>
-            <div class="col-md-4 text-end">
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleOverride(${linkCounter})">
-                    <i class="fas fa-edit"></i> Override
-                </button>
-                <button type="button" class="btn btn-sm btn-danger" onclick="removeLink(${linkCounter})">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        </div>
-        <div class="app-override" id="override-${linkCounter}" style="display: none;">
-            <div class="row">
-                <div class="col-md-4">
-                    <input type="text" class="form-control form-control-sm" 
-                           name="app_names[]" placeholder="Application Name">
-                </div>
-                <div class="col-md-4">
-                    <input type="text" class="form-control form-control-sm" 
-                           name="app_developers[]" placeholder="Developer">
-                </div>
-                <div class="col-md-4">
-                    <input type="file" class="form-control form-control-sm" 
-                           name="app_logos[]" accept="image/*">
-                </div>
-            </div>
-        </div>
-    `;
-    
-    container.appendChild(linkDiv);
-    linkCounter++;
-    
-    // Limit on maximum number of links
-    if (container.children.length >= 20) {
-        document.querySelector('button[onclick="addLink()"]').disabled = true;
-    }
-}
-
-function removeLink(index) {
-    const linkItem = document.querySelector(`[data-index="${index}"]`);
-    if (linkItem) {
-        linkItem.remove();
+    if (textarea && counter) {
+        const links = textarea.value.trim().split('\n').filter(link => link.trim());
+        const count = links.length;
         
-        // Enable add button if number of links becomes less than 20
-        const container = document.getElementById('linksContainer');
-        if (container.children.length < 20) {
-            document.querySelector('button[onclick="addLink()"]').disabled = false;
-        }
-        
-        // Check minimum number of links
-        if (container.children.length < 1) {
-            alert('Enter at least one link to create a presentation');
+        if (count === 0) {
+            counter.textContent = '';
+        } else {
+            counter.textContent = `(${count} links)`;
+            counter.className = 'text-success';
         }
     }
 }
 
-function toggleOverride(index) {
-    const overrideDiv = document.getElementById(`override-${index}`);
-    if (overrideDiv.style.display === 'none' || overrideDiv.style.display === '') {
-        overrideDiv.style.display = 'block';
-    } else {
-        overrideDiv.style.display = 'none';
+// Initialize link counter when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    const textarea = document.getElementById('app_links');
+    if (textarea) {
+        textarea.addEventListener('input', updateLinkCounter);
+        textarea.addEventListener('paste', function() {
+            // Update counter after paste event is processed
+            setTimeout(updateLinkCounter, 100);
+        });
+        updateLinkCounter(); // Initial count
     }
-}
+});
 
 function showLoading() {
     document.getElementById('loadingIndicator').style.display = 'block';
@@ -87,6 +41,16 @@ function hideLoading() {
 
 function previewPresentation() {
     const form = document.getElementById('presentationForm');
+    const textarea = document.getElementById('app_links');
+    
+    // Validate textarea manually
+    if (!textarea.value.trim()) {
+        alert('Please enter at least one AppExchange link');
+        textarea.focus();
+        return;
+    }
+    
+    const links = textarea.value.trim().split('\n').filter(link => link.trim());
     if (!form.checkValidity()) {
         form.reportValidity();
         return;
@@ -217,11 +181,8 @@ function downloadFile(formData, format) {
 document.getElementById('presentationForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
-    const container = document.getElementById('linksContainer');
-    if (container.children.length < 1) {
-        alert('At least 1 link is required to create a presentation');
-        return;
-    }
+    const textarea = document.getElementById('app_links');
+    const links = textarea.value.trim().split('\n').filter(link => link.trim());
     
     // If form is valid, show preview automatically
     previewPresentation();
@@ -230,12 +191,4 @@ document.getElementById('presentationForm').addEventListener('submit', function(
 // Real-time validation
 document.getElementById('industry').addEventListener('input', function() {
     this.value = this.value.replace(/[^a-zA-Zа-яёА-ЯЁ\s]/g, '');
-});
-
-// Automatic link addition on startup
-document.addEventListener('DOMContentLoaded', function() {
-    // Add 4 more link fields by default (total will be 5)
-    for (let i = 0; i < 4; i++) {
-        addLink();
-    }
 });
