@@ -14,7 +14,7 @@ function addLink() {
             </div>
             <div class="col-md-4 text-end">
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleOverride(${linkCounter})">
-                    <i class="fas fa-edit"></i> Переопределить
+                    <i class="fas fa-edit"></i> Override
                 </button>
                 <button type="button" class="btn btn-sm btn-danger" onclick="removeLink(${linkCounter})">
                     <i class="fas fa-trash"></i>
@@ -25,11 +25,11 @@ function addLink() {
             <div class="row">
                 <div class="col-md-4">
                     <input type="text" class="form-control form-control-sm" 
-                           name="app_names[]" placeholder="Название приложения">
+                           name="app_names[]" placeholder="Application Name">
                 </div>
                 <div class="col-md-4">
                     <input type="text" class="form-control form-control-sm" 
-                           name="app_developers[]" placeholder="Разработчик">
+                           name="app_developers[]" placeholder="Developer">
                 </div>
                 <div class="col-md-4">
                     <input type="file" class="form-control form-control-sm" 
@@ -42,7 +42,7 @@ function addLink() {
     container.appendChild(linkDiv);
     linkCounter++;
     
-    // Ограничение на максимальное количество ссылок
+    // Limit on maximum number of links
     if (container.children.length >= 20) {
         document.querySelector('button[onclick="addLink()"]').disabled = true;
     }
@@ -53,15 +53,15 @@ function removeLink(index) {
     if (linkItem) {
         linkItem.remove();
         
-        // Включить кнопку добавления, если количество ссылок стало меньше 20
+        // Enable add button if number of links becomes less than 20
         const container = document.getElementById('linksContainer');
         if (container.children.length < 20) {
             document.querySelector('button[onclick="addLink()"]').disabled = false;
         }
         
-        // Проверить минимальное количество ссылок
+        // Check minimum number of links
         if (container.children.length < 1) {
-            alert('Введите хотя бы одну ссылку для создания презентации');
+            alert('Enter at least one link to create a presentation');
         }
     }
 }
@@ -107,12 +107,12 @@ function previewPresentation() {
         if (data.success) {
             showPreview(data.preview);
         } else {
-            alert('Ошибка при создании превью: ' + data.error);
+            alert('Error creating preview: ' + data.error);
         }
     })
     .catch(error => {
         hideLoading();
-        alert('Ошибка: ' + error.message);
+        alert('Error: ' + error.message);
     });
 }
 
@@ -123,16 +123,16 @@ function showPreview(previewData) {
     let hasWarnings = false;
     
     previewData.slides.forEach((slide, index) => {
-        const isWarning = slide.content && slide.content.includes('⚠️ Требуется ручной ввод');
+        const isWarning = slide.content && slide.content.includes('⚠️ Manual input required');
         if (isWarning) hasWarnings = true;
         
         html += `
             <div class="slide-preview ${isWarning ? 'border-warning' : ''}">
-                <h5><i class="fas fa-file-powerpoint"></i> Слайд ${index + 1}: ${slide.title}</h5>
-                ${isWarning ? '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> Для этого слайда требуется ручной ввод данных</div>' : ''}
+                <h5><i class="fas fa-file-powerpoint"></i> Slide ${index + 1}: ${slide.title}</h5>
+                ${isWarning ? '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> This slide requires manual data input</div>' : ''}
                 <div class="row">
                     ${slide.content ? `<div class="col-md-8">${slide.content}</div>` : ''}
-                    ${slide.image ? `<div class="col-md-4"><img src="${slide.image}" class="img-fluid rounded" alt="Логотип"></div>` : ''}
+                    ${slide.image ? `<div class="col-md-4"><img src="${slide.image}" class="img-fluid rounded" alt="Logo"></div>` : ''}
                 </div>
             </div>
         `;
@@ -141,13 +141,13 @@ function showPreview(previewData) {
     if (hasWarnings) {
         html = `
             <div class="alert alert-info">
-                <h6><i class="fas fa-info-circle"></i> Внимание!</h6>
-                <p>Для некоторых приложений не удалось автоматически извлечь данные. 
-                Используйте кнопку "Переопределить" рядом с соответствующими ссылками для ручного ввода:</p>
+                <h6><i class="fas fa-info-circle"></i> Attention!</h6>
+                <p>For some applications, data could not be automatically extracted. 
+                Use the "Override" button next to corresponding links for manual input:</p>
                 <ul class="mb-0">
-                    <li>Название приложения</li>
-                    <li>Разработчик</li>
-                    <li>Логотип (файл изображения)</li>
+                    <li>Application name</li>
+                    <li>Developer</li>
+                    <li>Logo (image file)</li>
                 </ul>
             </div>
         ` + html;
@@ -156,7 +156,7 @@ function showPreview(previewData) {
     previewContent.innerHTML = html;
     document.getElementById('previewSection').style.display = 'block';
     
-    // Прокрутить к превью
+    // Scroll to preview
     document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -187,7 +187,7 @@ function downloadFile(formData, format) {
         if (response.ok) {
             return response.blob();
         } else {
-            throw new Error('Ошибка при генерации файла');
+            throw new Error('Error generating file');
         }
     })
     .then(blob => {
@@ -209,32 +209,32 @@ function downloadFile(formData, format) {
     })
     .catch(error => {
         hideLoading();
-        alert('Ошибка при скачивании: ' + error.message);
+        alert('Download error: ' + error.message);
     });
 }
 
-// Обработчик отправки формы
+// Form submission handler
 document.getElementById('presentationForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
     const container = document.getElementById('linksContainer');
     if (container.children.length < 1) {
-        alert('Необходимо минимум 1 ссылку для создания презентации');
+        alert('At least 1 link is required to create a presentation');
         return;
     }
     
-    // Если форма валидна, показать превью автоматически
+    // If form is valid, show preview automatically
     previewPresentation();
 });
 
-// Валидация в реальном времени
+// Real-time validation
 document.getElementById('industry').addEventListener('input', function() {
     this.value = this.value.replace(/[^a-zA-Zа-яёА-ЯЁ\s]/g, '');
 });
 
-// Автоматическое добавление ссылок при запуске
+// Automatic link addition on startup
 document.addEventListener('DOMContentLoaded', function() {
-    // Добавить еще 4 поля ссылок по умолчанию (всего будет 5)
+    // Add 4 more link fields by default (total will be 5)
     for (let i = 0; i < 4; i++) {
         addLink();
     }

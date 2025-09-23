@@ -2,14 +2,14 @@
 sfapps_template_generator.py
 =================================
 
-This module provides a high–level helper for constructing
-PowerPoint presentations from a pre‐built template.  Unlike
+This module provides a high-level helper for constructing
+PowerPoint presentations from a pre-built template.  Unlike
 ``sfapps_presentation_generator.py`` – which rebuilds each slide from
 scratch – this module edits an existing PPTX file in place.  It
 maintains all decorative artwork, backgrounds and layout elements
 defined in the original template and only replaces the fields the
-caller cares about: the cover page title, the per–application name,
-publisher and logo, and the closing call–to–action.
+caller cares about: the cover page title, the per-application name,
+publisher and logo, and the closing call-to-action.
 
 The workflow is as follows:
 
@@ -105,9 +105,9 @@ def _extract_from_html(html: str) -> Tuple[Optional[str], Optional[str], Optiona
     logo = None
     
     # Try CSS selectors first (most reliable for AppExchange)
-    # Правильные селекторы для названия (по структуре HTML)
+    # Correct selectors for title (based on HTML structure)
     name_selectors = [
-        'h1[type="style"]',  # Видно в HTML справа
+        'h1[type="style"]',  # Visible in HTML on the right
         '.listing-title h1',
         'h1',
         '[data-testid="listing-title"]'
@@ -118,12 +118,12 @@ def _extract_from_html(html: str) -> Tuple[Optional[str], Optional[str], Optiona
             text = element.get_text().strip()
             if text:  # Make sure text is not empty
                 name = text
-                print(f"Найдено название через селектор '{selector}': {name}")
+                print(f"Found title via selector '{selector}': {name}")
                 break
 
-    # Правильные селекторы для разработчика (по структуре HTML)
+    # Correct selectors for developer (based on HTML structure)
     dev_selectors = [
-        'p[type="style"]',  # Видно в HTML справа - "By TaskRay"
+        'p[type="style"]',  # Visible in HTML on the right - "By TaskRay"
         '.listing-title p',
         'p',
         '[data-testid="listing-publisher"]'
@@ -138,12 +138,12 @@ def _extract_from_html(html: str) -> Tuple[Optional[str], Optional[str], Optiona
                     dev = dev_text[3:].strip()
                 else:
                     dev = dev_text
-                print(f"Найден разработчик через селектор '{selector}': {dev}")
+                print(f"Found developer via selector '{selector}': {dev}")
                 break
 
-    # Правильные селекторы для логотипа (по структуре HTML)
+    # Correct selectors for logo (based on HTML structure)
     logo_selectors = [
-        'img.ads-image',  # Точно как показано в HTML справа
+        'img.ads-image',  # Exactly as shown in HTML on the right
         '.ads-image',
         '.listing-logo img',
         '.summary img',
@@ -155,7 +155,7 @@ def _extract_from_html(html: str) -> Tuple[Optional[str], Optional[str], Optiona
             # Try different attributes for image URL
             logo = element.get('src') or element.get('data-src') or element.get('data-original') or element.get('data-lazy')
             if logo:
-                print(f"Найден логотип через селектор '{selector}': {logo}")
+                print(f"Found logo via selector '{selector}': {logo}")
                 break
     
     # Try to extract from JSON script tags only if CSS failed
@@ -229,28 +229,28 @@ def fetch_app_metadata(url: str, timeout: int = 20) -> Optional[AppMetadata]:
         ``AppMetadata`` containing the name, developer and logo bytes
         if successful, otherwise ``None``.
     """
-    # Импортируем современный Selenium парсер
+    # Import modern Selenium parser
     try:
         from appexchange_parser import parse_appexchange_improved
-        print(f"🔄 Используем современный Selenium парсер для {url}")
+        print(f"🔄 Using modern Selenium parser for {url}")
         
-        # Используем современный парсер с поддержкой Shadow DOM
+        # Use modern parser with Shadow DOM support
         result = parse_appexchange_improved(url)
         
         if not result or not result.get('success'):
-            print(f"❌ Парсер не смог извлечь данные из {url}")
+            print(f"❌ Parser could not extract data from {url}")
             return None
             
         name = result.get('name', 'Unknown App')
         developer = result.get('developer', 'Unknown Developer')
         logo_url = result.get('logo_url')
         
-        print(f"✅ Selenium парсер извлек данные:")
-        print(f"   Название: {name}")
-        print(f"   Разработчик: {developer}")
-        print(f"   URL логотипа: {logo_url}")
+        print(f"✅ Selenium parser extracted data:")
+        print(f"   Name: {name}")
+        print(f"   Developer: {developer}")
+        print(f"   Logo URL: {logo_url}")
         
-        # Загружаем логотип
+        # Download logo
         logo_bytes = b''
         logo_mime = 'image/png'
         
@@ -264,16 +264,16 @@ def fetch_app_metadata(url: str, timeout: int = 20) -> Optional[AppMetadata]:
                 img_resp.raise_for_status()
                 logo_bytes = img_resp.content
                 logo_mime = img_resp.headers.get('Content-Type', 'image/png')
-                print(f"✅ Логотип загружен: {len(logo_bytes)} байт, MIME: {logo_mime}")
+                print(f"✅ Logo downloaded: {len(logo_bytes)} bytes, MIME: {logo_mime}")
             except Exception as e:
-                print(f"⚠️ Ошибка загрузки логотипа: {e}")
+                print(f"⚠️ Logo download error: {e}")
                 logo_bytes = b''
         
         return AppMetadata(url=url, name=name, developer=developer, logo_bytes=logo_bytes, logo_mime=logo_mime)
         
     except ImportError:
-        print(f"❌ Selenium парсер недоступен, используем fallback для {url}")
-        # Fallback на старый HTML парсер только если Selenium недоступен
+        print(f"❌ Selenium parser unavailable, using fallback for {url}")
+        # Fallback to old HTML parser only if Selenium unavailable
         headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
                           '(KHTML, like Gecko) Chrome/120.0 Safari/537.36'
@@ -296,7 +296,7 @@ def fetch_app_metadata(url: str, timeout: int = 20) -> Optional[AppMetadata]:
             return None
         return AppMetadata(url=url, name=name, developer=dev, logo_bytes=logo_bytes, logo_mime=logo_mime)
     except Exception as e:
-        print(f"❌ Ошибка в fetch_app_metadata: {e}")
+        print(f"❌ Error in fetch_app_metadata: {e}")
         return None
 
 
@@ -311,7 +311,7 @@ def _remove_comments_from_slides(prs: Presentation, slide_indices: List[int]) ->
     slide_indices: List[int]
         Zero-based indices of slides to remove comments from.
     """
-    print(f"🗑️ Удаление комментариев со слайдов: {[i+1 for i in slide_indices]}")
+    print(f"🗑️ Removing comments from slides: {[i+1 for i in slide_indices]}")
     
     for slide_idx in slide_indices:
         if slide_idx < len(prs.slides):
@@ -319,55 +319,52 @@ def _remove_comments_from_slides(prs: Presentation, slide_indices: List[int]) ->
             try:
                 slide_part = slide.part
                 
-                # Найдем все отношения к комментариям (несколько вариантов поиска)
+                # Find all relationships to comments (multiple search variants)
                 comment_rels = []
                 
-                print(f"   🔍 Анализ слайда {slide_idx + 1}, найдено отношений: {len(slide_part.rels)}")
+                print(f"   🔍 Analyzing slide {slide_idx + 1}, found relationships: {len(slide_part.rels)}")
                 
                 for rel_id, rel in slide_part.rels.items():
                     rel_type = getattr(rel, 'reltype', 'unknown')
                     print(f"     - {rel_id}: {rel_type}")
                     
-                    # Ищем разные варианты комментариев
+                    # Look for different comment variants
                     if (hasattr(rel, 'reltype') and 
                         ('comment' in rel_type.lower() or 
                          'comments' in rel_type.lower() or
                          rel_type.endswith('/comments'))):
                         comment_rels.append(rel_id)
-                        print(f"     ✅ Найден комментарий: {rel_id} ({rel_type})")
+                        print(f"     ✅ Found comment: {rel_id} ({rel_type})")
                 
-                # Удаляем отношения к комментариям
+                # Remove comment relationships
                 for rel_id in comment_rels:
                     try:
-                        # Получаем часть комментария перед удалением
                         comment_part = slide_part.rels[rel_id].target_part
                         
-                        # Удаляем отношение из слайда
                         slide_part.drop_rel(rel_id)
                         
-                        # Также нужно удалить часть комментария из пакета
                         try:
                             if hasattr(prs.part, 'package'):
                                 package = prs.part.package
                                 if hasattr(package, '_parts') and comment_part.partname in package._parts:
                                     del package._parts[comment_part.partname]
                         except Exception as pkg_e:
-                            print(f"   ⚠️ Не удалось удалить из пакета: {pkg_e}")
+                            print(f"   ⚠️ Could not remove from package: {pkg_e}")
                         
-                        print(f"   ✅ Удален комментарий {rel_id} со слайда {slide_idx + 1}")
+                        print(f"   ✅ Removed comment {rel_id} from slide {slide_idx + 1}")
                         
                     except Exception as e:
-                        print(f"   ⚠️ Ошибка удаления комментария {rel_id}: {e}")
+                        print(f"   ⚠️ Error removing comment {rel_id}: {e}")
                 
                 if not comment_rels:
-                    print(f"   ℹ️ Комментарии на слайде {slide_idx + 1} не найдены")
+                    print(f"   ℹ️ No comments found on slide {slide_idx + 1}")
                 else:
-                    print(f"   ✅ Обработано {len(comment_rels)} комментариев на слайде {slide_idx + 1}")
+                    print(f"   ✅ Processed {len(comment_rels)} comments on slide {slide_idx + 1}")
                     
             except Exception as e:
-                print(f"   ⚠️ Ошибка при удалении комментариев со слайда {slide_idx + 1}: {e}")
+                print(f"   ⚠️ Error removing comments from slide {slide_idx + 1}: {e}")
         else:
-            print(f"   ⚠️ Слайд {slide_idx + 1} не найден (всего слайдов: {len(prs.slides)})")
+            print(f"   ⚠️ Slide {slide_idx + 1} not found (total slides: {len(prs.slides)})")
 
 
 def _clone_slide(prs: Presentation, index: int) -> None:
@@ -440,7 +437,7 @@ def _find_logo_shape(slide) -> Optional[int]:
     int or None
         The index of the candidate shape or ``None`` if none match.
     """
-    print(f"🔍 Поиск логотипа среди {len(slide.shapes)} shapes на слайде:")
+    print(f"🔍 Searching for logo among {len(slide.shapes)} shapes on slide:")
     candidates: List[Tuple[float, int]] = []
     
     for idx, shape in enumerate(slide.shapes):
@@ -452,21 +449,21 @@ def _find_logo_shape(slide) -> Optional[int]:
             
             if 1.0 < w < 4.0 and 1.0 < h < 4.0:
                 candidates.append((area, idx))
-                print(f"     ✅ Подходит как логотип (размер в диапазоне 1-4 дюйма)")
+                print(f"     ✅ Candidate for logo")
             else:
-                print(f"     ❌ Не подходит (размер вне диапазона 1-4 дюйма)")
+                print(f"     ❌ Not suitable (size out of range 1-4 inches)")
         else:
             shape_type_name = str(shape.shape_type).split('.')[-1] if hasattr(shape.shape_type, 'name') else str(shape.shape_type)
-            print(f"   Shape [{idx}]: {shape_type_name} (не изображение)")
+            print(f"   Shape [{idx}]: {shape_type_name} (not an image)")
     
     if not candidates:
-        print("❌ Не найдено подходящих shapes для логотипа")
+        print("❌ No suitable shapes found for logo")
         return None
         
     candidates.sort(reverse=True)  # Largest area first
     selected_idx = candidates[0][1]
     selected_area = candidates[0][0]
-    print(f"✅ Выбран shape [{selected_idx}] с площадью {selected_area:.3f}")
+    print(f"✅ Selected shape [{selected_idx}] with area {selected_area:.3f}")
     return selected_idx
 
 
@@ -491,44 +488,44 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
     number: int
         One–based sequence number to display on the slide.
     """
-    print(f"\n🎯 Обновление слайда #{number}")
-    print(f"   Приложение: {app.name}")
-    print(f"   Разработчик: {app.developer}")
-    print(f"   Logo bytes: {len(app.logo_bytes) if app.logo_bytes else 0} байт")
-    print(f"   Logo MIME: {getattr(app, 'logo_mime', 'не указан')}")
+    print(f"\n🎯 Updating slide #{number}")
+    print(f"   Application: {app.name}")
+    print(f"   Developer: {app.developer}")
+    print(f"   Logo bytes: {len(app.logo_bytes) if app.logo_bytes else 0} bytes")
+    print(f"   Logo MIME: {getattr(app, 'logo_mime', 'not specified')}")
     
     # Update text shapes
     replaced_name = False
     for shape in slide.shapes:
-не        if not shape.has_text_frame:
+        if not shape.has_text_frame:
             continue
         text = shape.text
         if '#' in text:
             # Normalize to a single number with leading space as in the template
             shape.text = f" #{number}"
-            # Форматирование для номера: font Poppins, bold, 40pt, color #ffffff
+            # Formatting for number: font Poppins, bold, 40pt, color #ffffff
             for paragraph in shape.text_frame.paragraphs:
                 for run in paragraph.runs:
                     run.font.name = 'Poppins'
                     run.font.bold = True
                     run.font.size = Pt(40)
                     run.font.color.rgb = RGBColor(0xff, 0xff, 0xff)
-            # Вертикальное выравнивание по центру
+            # Vertical alignment to middle
             shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             continue
         lowered = text.strip().lower()
         if lowered.startswith('by '):
             shape.text = f"{app.developer}"
-            # Форматирование для разработчика: font Poppins, 27pt, left align, color #3cc0ff
+            # Formatting for developer: font Poppins, 27pt, left align, color #3cc0ff
             for paragraph in shape.text_frame.paragraphs:
                 paragraph.alignment = PP_ALIGN.LEFT
                 for run in paragraph.runs:
                     run.font.name = 'Poppins'
                     run.font.size = Pt(27)
                     run.font.color.rgb = RGBColor(0x3c, 0xc0, 0xff)
-            # Вертикальное выравнивание по центру
+            # Vertical alignment to middle
             shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-            # Устанавливаем минимальную ширину 200px (примерно 150pt)
+            # Set minimum width to 200px (approximately 150pt)
             min_width_pt = 150  # 200px ≈ 150pt
             if shape.width < Pt(min_width_pt):
                 shape.width = Pt(min_width_pt)
@@ -538,7 +535,7 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
             # If the text originally came from the template it will
             # match one of the placeholder names; simply replace it.
             shape.text = app.name
-            # Форматирование для имени: font Poppins, bold, 40pt, left align, #163560
+            # Formatting for name: font Poppins, bold, 40pt, left align, #163560
             for paragraph in shape.text_frame.paragraphs:
                 paragraph.alignment = PP_ALIGN.LEFT
                 for run in paragraph.runs:
@@ -546,27 +543,23 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
                     run.font.bold = True
                     run.font.size = Pt(40)
                     run.font.color.rgb = RGBColor(0x16, 0x35, 0x60)
-            # Вертикальное выравнивание по центру
+            # Vertical alignment to middle
             shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             replaced_name = True
             continue
     # Update logo image
     idx = _find_logo_shape(slide)
-    print(f"🔍 Обновление логотипа для {app.name}")
-    print(f"   Индекс shape логотипа: {idx}")
-    print(f"   Размер logo_bytes: {len(app.logo_bytes) if app.logo_bytes else 0} байт")
-    print(f"   MIME тип: {getattr(app, 'logo_mime', 'не указан')}")
+    print(f"🔍 Updating logo for {app.name}")
+    print(f"   Logo shape index: {idx}")
+    print(f"   Logo_bytes size: {len(app.logo_bytes) if app.logo_bytes else 0} bytes")
+    print(f"   MIME type: {getattr(app, 'logo_mime', 'not specified')}")
     
     if idx is not None:
         pic_shape = slide.shapes[idx]
-        print(f"   Исходный размер shape на слайде: {pic_shape.width} x {pic_shape.height}")
-        
-        # Устанавливаем размер картинки, сохраняя пропорции
         target_width = Pt(207)
         target_height = Pt(161)
         
         if not app.logo_bytes:
-            print("⚠️ ВНИМАНИЕ: logo_bytes пустой, логотип не будет обновлен")
             return
             
         # Acquire the relationship id pointing to the image
@@ -576,53 +569,53 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
         
         # Load image into PIL to scale it down if necessary
         try:
-            print("   Загружаем изображение в PIL...")
+            print("   Loading image into PIL...")
             with Image.open(BytesIO(app.logo_bytes)) as img:
-                print(f"   Исходный размер изображения: {img.size}")
-                print(f"   Формат изображения: {img.format}")
-                
-                # Размер в пикселях для 207x161 pt при 96 DPI
+                print(f"   Original image size: {img.size}")
+                print(f"   Image format: {img.format}")
+
+                # Size in pixels for 207x161 pt at 96 DPI
                 target_w_px = int(207 * 96 / 72)  # ~276 px
                 target_h_px = int(161 * 96 / 72)  # ~215 px
-                print(f"   Целевой размер для логотипа: {target_w_px} x {target_h_px} px")
-                
+                print(f"   Target size for logo: {target_w_px} x {target_h_px} px")
+
                 # Resize while preserving aspect ratio within target bounds
                 w, h = img.size
                 ratio = min(target_w_px / w, target_h_px / h)
-                print(f"   Коэффициент масштабирования: {ratio:.3f}")
-                
+                print(f"   Scaling factor: {ratio:.3f}")
+
                 new_size = (int(w * ratio), int(h * ratio))
                 img = img.resize(new_size, Image.LANCZOS)
-                print(f"   Изображение изменено до: {new_size}")
-                    
+                print(f"   Image resized to: {new_size}")
+
                 buf = BytesIO()
                 img.save(buf, format='PNG')
                 new_bytes = buf.getvalue()
-                print(f"   Финальный размер PNG: {len(new_bytes)} байт")
-                
-                # Устанавливаем размер shape в PowerPoint, сохраняя пропорции
-                # Вычисляем конечные размеры в pt для PowerPoint
+                print(f"   Final PNG size: {len(new_bytes)} bytes")
+
+                # Set shape size in PowerPoint, preserving aspect ratio
+                # Calculate final sizes in pt for PowerPoint
                 final_width_pt = new_size[0] * 72 / 96
                 final_height_pt = new_size[1] * 72 / 96
                 
                 pic_shape.width = Pt(final_width_pt)
                 pic_shape.height = Pt(final_height_pt)
-                print(f"   Установлены размеры shape: {final_width_pt:.1f}pt x {final_height_pt:.1f}pt")
+                print(f"   Updated shape size: {final_width_pt:.1f}pt x {final_height_pt:.1f}pt")
                 
         except Exception as e:
-            print(f"❌ Ошибка обработки изображения: {e}")
-            print(f"   Используем оригинальные bytes ({len(app.logo_bytes)} байт)")
+            print(f"❌ Image processing error: {e}")
+            print(f"   Using original bytes ({len(app.logo_bytes)} bytes)")
             # If resizing fails, fall back to original bytes, but still set target size
             pic_shape.width = target_width
             pic_shape.height = target_height
             new_bytes = app.logo_bytes
             
         # Overwrite the underlying image part
-        print("   Обновляем image part в презентации...")
+        print("   Updating image part in presentation...")
         image_part._blob = new_bytes
-        print("✅ Логотип успешно обновлен")
+        print("✅ Logo successfully updated")
     else:
-        print("❌ Не найден shape для логотипа на слайде")
+        print("❌ Logo shape not found on slide")
 
 
 def _update_cover_slide(slide, topic: str) -> None:
@@ -642,10 +635,9 @@ def _update_cover_slide(slide, topic: str) -> None:
         if not shape.has_text_frame:
             continue
         if '$industry' in shape.text:
-            # Заменяем текст
             shape.text = shape.text.replace('$industry', topic)
-            
-            # Применяем форматирование для титульного слайда
+
+            # Apply formatting for cover slide
             # font Poppins, bold, 59pt, color #3cc0ff
             for paragraph in shape.text_frame.paragraphs:
                 paragraph.alignment = PP_ALIGN.CENTER
@@ -654,11 +646,11 @@ def _update_cover_slide(slide, topic: str) -> None:
                     run.font.bold = True
                     run.font.size = Pt(59)
                     run.font.color.rgb = RGBColor(0x3c, 0xc0, 0xff)
-            
-            # Вертикальное выравнивание по центру
+
+            # Vertical alignment to middle
             shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-                    
-            print(f"✅ Обновлен титульный слайд с темой: '{topic}'")
+
+            print(f"✅ Updated cover slide with topic: '{topic}'")
 
 
 def _update_closing_slide(slide, topic: str, final_url: str) -> None:
@@ -683,44 +675,44 @@ def _update_closing_slide(slide, topic: str, final_url: str) -> None:
     for shape in slide.shapes:
         if shape.has_text_frame:
             if '$industry' in shape.text:
-                # Создаем текст "Apps for {topic} at"
+                # Create text "Apps for {topic} at"
                 full_text = f"Apps for {topic} at"
-                
-                # Очищаем существующий текст
+
+                # Clear existing text
                 shape.text = ""
-                
-                # Применяем разное форматирование к разным частям текста
+
+                # Apply formatting for different parts of the text
                 paragraph = shape.text_frame.paragraphs[0]
                 paragraph.alignment = PP_ALIGN.CENTER
-                    
-                # "Apps for " - цвет #163560
+
+                # "Apps for " - color #163560
                 run1 = paragraph.add_run()
                 run1.text = "Apps for "
                 run1.font.name = 'Poppins'
                 run1.font.bold = True
                 run1.font.size = Pt(59)
                 run1.font.color.rgb = RGBColor(0x16, 0x35, 0x60)
-                
-                # "{topic}" - цвет #3cc0ff
+
+                # "{topic}" - color #3cc0ff
                 run2 = paragraph.add_run()
                 run2.text = topic
                 run2.font.name = 'Poppins'
                 run2.font.bold = True
                 run2.font.size = Pt(59)
                 run2.font.color.rgb = RGBColor(0x3c, 0xc0, 0xff)
-                
-                # " at" - цвет #163560
+
+                # " at" - color #163560
                 run3 = paragraph.add_run()
                 run3.text = " at"
                 run3.font.name = 'Poppins'
                 run3.font.bold = True
                 run3.font.size = Pt(59)
                 run3.font.color.rgb = RGBColor(0x16, 0x35, 0x60)
-                
-                # Вертикальное выравнивание по центру
+
+                # Vertical alignment to middle
                 shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-                        
-                print(f"✅ Обновлен текст закрывающего слайда: 'Apps for {topic} at'")
+
+                print(f"✅ Updated closing slide text: 'Apps for {topic} at'")
     # Assign hyperlink to picture containing SFApps logo; heuristic is
     # to pick the image with a long width and small height (the pill
     # shaped button) – this is picture index 3 in the template.
@@ -812,30 +804,23 @@ def create_presentation_from_template(
         meta = None
         if link in overrides:
             ovr = overrides[link]
-            print(f"🔍 Обработка overrides для {link}")
-            print(f"   Доступные ключи в ovr: {list(ovr.keys())}")
-            
+
             # Read logo bytes if provided; if not present we skip
             logo_bytes = None
             logo_mime = 'image/png'
             
-            # Приоритет 1: Уже загруженные logo_bytes
             if 'logo_bytes' in ovr and ovr['logo_bytes']:
                 logo_bytes = ovr['logo_bytes']
                 logo_mime = ovr.get('logo_mime', 'image/png')
-                print(f"   ✅ Используем logo_bytes: {len(logo_bytes)} байт, MIME: {logo_mime}")
-            # Приоритет 2: Путь к файлу
             elif 'logo_path' in ovr and ovr['logo_path']:
                 try:
                     with open(ovr['logo_path'], 'rb') as f:
                         logo_bytes = f.read()
                         logo_mime = ovr.get('logo_mime', 'image/png')
-                    print(f"   ✅ Загружен logo из файла: {len(logo_bytes)} байт")
                 except Exception as e:
-                    print(f"   ❌ Ошибка загрузки logo из файла: {e}")
                     logo_bytes = None
             else:
-                print(f"   ⚠️ Логотип не найден в overrides")
+                print(f"   ⚠️ no logo in overrides")
                 
             meta = AppMetadata(
                 url=link,
@@ -844,7 +829,7 @@ def create_presentation_from_template(
                 logo_bytes=logo_bytes if logo_bytes else b'',
                 logo_mime=logo_mime,
             )
-            print(f"   📊 Создан AppMetadata: logo_bytes={len(meta.logo_bytes)} байт")
+            print(f"   📊 Created AppMetadata: logo_bytes={len(meta.logo_bytes)} bytes")
         else:
             fetched = fetch_app_metadata(link)
             if fetched:
@@ -899,12 +884,12 @@ def create_presentation_from_template(
     
     # Remove comments from specified slides (1, 2, and last slide)
     try:
-        last_slide_index = len(prs.slides) - 1  # Динамически определяем последний слайд
-        _remove_comments_from_slides(prs, [0, 1, last_slide_index])  # Slides 1, 2, и последний
-        print(f"🔍 Удаление комментариев с слайдов: 1, 2, {last_slide_index + 1} (последний)")
+        last_slide_index = len(prs.slides) - 1  # Dynamically determine last slide
+        _remove_comments_from_slides(prs, [0, 1, last_slide_index])  # Slides 1, 2, and last
+        print(f"🔍 Removing comments from slides: 1, 2, {last_slide_index + 1} (last)")
     except Exception as e:
-        print(f"⚠️ Ошибка при удалении комментариев: {e}")
-    
+        print(f"⚠️ Error removing comments: {e}")
+
     # Save PPTX
     prs.save(output_pptx)
     # Optionally convert to PDF using LibreOffice
