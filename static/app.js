@@ -60,8 +60,8 @@ function removeLink(index) {
         }
         
         // Проверить минимальное количество ссылок
-        if (container.children.length < 5) {
-            alert('Необходимо минимум 5 ссылок для создания презентации');
+        if (container.children.length < 1) {
+            alert('Введите хотя бы одну ссылку для создания презентации');
         }
     }
 }

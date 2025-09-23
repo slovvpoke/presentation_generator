@@ -18,6 +18,8 @@ Flask Web Application for SFApps Presentation Generator
 
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 import uuid
 import base64
 import mimetypes
@@ -33,33 +35,14 @@ from sfapps_template_generator import (
     AppMetadata
 )
 
-# Импорт улучшенного Selenium парсера (приоритетный)
+# Импорт основного Selenium парсера
 try:
-    from improved_selenium_parser import parse_appexchange_improved
-    IMPROVED_SELENIUM_AVAILABLE = True
-    print("✅ Улучшенный Selenium парсер доступен")
+    from appexchange_parser import parse_appexchange_improved, parse_multiple_appexchange_urls
+    PARSER_AVAILABLE = True
+    print("✅ Selenium парсер с Shadow DOM доступен")
 except ImportError:
-    IMPROVED_SELENIUM_AVAILABLE = False
-    print("⚠️ Улучшенный Selenium парсер недоступен")
-
-# Импорт простого Selenium парсера (резервный)
-try:
-    from simple_parser import parse_appexchange_simple
-    SELENIUM_PARSER_AVAILABLE = True
-    print("✅ Простой Selenium парсер доступен")
-except ImportError:
-    SELENIUM_PARSER_AVAILABLE = False
-    print("⚠️ Простой Selenium парсер недоступен")
-
-# Импорт финального парсера (резервный)
-try:
-    from final_parser import parse_appexchange_app
-    FINAL_PARSER_AVAILABLE = True
-    print("✅ Финальный парсер доступен")
-except ImportError:
-    from sfapps_template_generator import fetch_app_metadata
-    FINAL_PARSER_AVAILABLE = False
-    print("⚠️ Финальный парсер недоступен")
+    PARSER_AVAILABLE = False
+    print("❌ Ошибка: Selenium парсер недоступен!")
 
 app = Flask(__name__)
 app.secret_key = 'sfapps-presentation-generator-secret-key-2025'
@@ -133,8 +116,86 @@ def save_uploaded_file(file):
     return None
 
 
+def fetch_multiple_app_metadata(urls: list) -> Dict[str, AppMetadata]:
+    """Быстрое получение метаданных для нескольких URL одновременно"""
+    if not PARSER_AVAILABLE:
+        print("❌ Парсер недоступен!")
+        return {}
+    
+    if not urls:
+        return {}
+    
+    print(f"🚀 Быстрый пакетный парсинг {len(urls)} ссылок...")
+    
+    # Общие заголовки для загрузки изображений
+    img_headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8", 
+        "Referer": "https://appexchange.salesforce.com/",
+    }
+
+    def _download_logo(logo_url: str):
+        print(f"🔄 Загружаем логотип: {logo_url}")
+        try:
+            r = requests.get(logo_url, timeout=5, headers=img_headers)  # Было 10, стало 5 секунд
+            if r.status_code == 200:
+                logo_bytes = r.content
+                logo_mime = sniff_mime(logo_bytes, url_hint=logo_url, header_mime=r.headers.get("content-type", ""))
+                print(f"✅ Логотип загружен: {len(logo_bytes)} байт")
+                return logo_bytes, logo_mime
+        except Exception as e:
+            print(f"❌ Ошибка загрузки логотипа: {e}")
+        return b"", "image/png"
+    
+    # Пакетный парсинг всех URL
+    parse_results = parse_multiple_appexchange_urls(urls)
+    
+    # Параллельная загрузка логотипов
+    logo_downloads = {}
+    logo_urls_to_download = [(url, result.get('logo_url')) for url, result in parse_results.items() 
+                            if result.get('logo_url') and result.get('success')]
+    
+    print(f"🚀 Параллельная загрузка {len(logo_urls_to_download)} логотипов...")
+    
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_url = {
+            executor.submit(_download_logo, logo_url): app_url 
+            for app_url, logo_url in logo_urls_to_download
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_url):
+            app_url = future_to_url[future]
+            try:
+                logo_bytes, logo_mime = future.result()
+                logo_downloads[app_url] = (logo_bytes, logo_mime)
+            except Exception as e:
+                print(f"❌ Ошибка загрузки логотипа для {app_url}: {e}")
+                logo_downloads[app_url] = (b"", "image/png")
+    
+    # Конвертируем результаты в AppMetadata
+    metadata_results = {}
+    for url, result in parse_results.items():
+        name = result.get('name', 'Unknown App')
+        developer = result.get('developer', 'Unknown Developer')
+        
+        # Получаем логотип из параллельной загрузки
+        logo_bytes, logo_mime = logo_downloads.get(url, (b"", "image/png"))
+            
+        metadata = AppMetadata(
+            url=url, 
+            name=name, 
+            developer=developer, 
+            logo_bytes=logo_bytes, 
+            logo_mime=logo_mime
+        )
+        metadata_results[url] = metadata
+        
+    print(f"✅ Пакетный парсинг завершен: {len(metadata_results)} метаданных готово")
+    return metadata_results
+
+
 def fetch_app_metadata_with_fallback(url: str) -> Optional[AppMetadata]:
-    """Получение метаданных, приоритет — улучшенный Selenium парсер (.listing-title h1 / p / .listing-logo img)"""
+    """Получение метаданных через единственный Selenium парсер с Shadow DOM поддержкой"""
     # Общие заголовки для загрузки изображений (WebP/SVG и т.п.)
     img_headers = {
         "User-Agent": "Mozilla/5.0",
@@ -153,64 +214,51 @@ def fetch_app_metadata_with_fallback(url: str) -> Optional[AppMetadata]:
             print(f"Ошибка загрузки логотипа: {e}")
         return b"", "image/png"
 
-    # Приоритет 1: Улучшенный Selenium парсер
-    if IMPROVED_SELENIUM_AVAILABLE:
-        try:
-            print(f"🔄 Используем улучшенный Selenium парсер для {url}")
-            result = parse_appexchange_improved(url)
-            if result and result.get('success'):
-                name = result.get('name', 'Unknown App')
-                developer = result.get('developer', 'Unknown Developer')
-                logo_bytes, logo_mime = b"", "image/png"
-                logo_url = result.get('logo_url')
-                if logo_url:
-                    logo_bytes, logo_mime = _download_logo(logo_url)
-                return AppMetadata(url=url, name=name, developer=developer, logo_bytes=logo_bytes, logo_mime=logo_mime)
-        except Exception as e:
-            print(f"⚠️ Ошибка в улучшенном Selenium парсере: {e}")
+    # Единственный парсер: Selenium с Shadow DOM
+    if not PARSER_AVAILABLE:
+        print("❌ Парсер недоступен!")
+        return AppMetadata(
+            url=url,
+            name="Парсер недоступен",
+            developer="Установите зависимости",
+            logo_bytes=b'',
+            logo_mime='image/png'
+        )
 
-    # Приоритет 2: Простой Selenium парсер
-    if SELENIUM_PARSER_AVAILABLE:
-        try:
-            print(f"🔄 Используем простой Selenium парсер для {url}")
-            result = parse_appexchange_simple(url)
-            if result and result.get('success'):
-                name = result.get('name', 'Unknown App')
-                developer = result.get('developer', 'Unknown Developer')
-                logo_bytes, logo_mime = b"", "image/png"
-                logo_url = result.get('logo_url')
-                if logo_url:
-                    logo_bytes, logo_mime = _download_logo(logo_url)
-                return AppMetadata(url=url, name=name, developer=developer, logo_bytes=logo_bytes, logo_mime=logo_mime)
-        except Exception as e:
-            print(f"⚠️ Ошибка в простом Selenium парсере: {e}")
-
-    # Приоритет 3: Финальный парсер
-    if FINAL_PARSER_AVAILABLE:
-        try:
-            print(f"🔄 Используем финальный парсер для {url}")
-            result = parse_appexchange_app(url)
-            if result and result.get('name') != 'Unknown App':
-                name = result.get('name', 'Unknown App')
-                developer = result.get('developer', 'Unknown Developer')
-                logo_bytes, logo_mime = b"", "image/png"
-                image_url = result.get('image_url')
-                if image_url:
-                    logo_bytes, logo_mime = _download_logo(image_url)
-                return AppMetadata(url=url, name=name, developer=developer, logo_bytes=logo_bytes, logo_mime=logo_mime)
-        except Exception as e:
-            print(f"⚠️ Ошибка в финальном парсере: {e}")
-
-    # Приоритет 4: Оригинальный парсер
     try:
-        print(f"🔄 Используем оригинальный парсер для {url}")
-        from sfapps_template_generator import fetch_app_metadata
-        meta = fetch_app_metadata(url)
-        if meta:
-            return meta
+        print(f"🔄 Парсим данные с {url}")
+        result = parse_appexchange_improved(url)
+        
+        if result and result.get('success'):
+            name = result.get('name', 'Unknown App')
+            developer = result.get('developer', 'Unknown Developer')
+            logo_bytes, logo_mime = b"", "image/png"
+            logo_url = result.get('logo_url')
+            
+            print(f"📊 Данные от парсера:")
+            print(f"   Название: {name}")
+            print(f"   Разработчик: {developer}")
+            print(f"   URL логотипа: {logo_url}")
+            
+            if logo_url:
+                logo_bytes, logo_mime = _download_logo(logo_url)
+                print(f"📊 После загрузки логотипа:")
+                print(f"   Размер logo_bytes: {len(logo_bytes)} байт")
+                print(f"   MIME тип: {logo_mime}")
+                
+            metadata = AppMetadata(url=url, name=name, developer=developer, logo_bytes=logo_bytes, logo_mime=logo_mime)
+            print(f"📊 Создан AppMetadata объект:")
+            print(f"   metadata.logo_bytes размер: {len(metadata.logo_bytes) if metadata.logo_bytes else 0} байт")
+            print(f"   metadata.logo_mime: {getattr(metadata, 'logo_mime', 'не установлен')}")
+            
+            return metadata
+        else:
+            print("⚠️ Парсер не смог извлечь данные")
+            
     except Exception as e:
-        print(f"⚠️ Ошибка в оригинальном парсере: {e}")
+        print(f"❌ Ошибка при парсинге: {e}")
 
+    # Если все попытки неудачны
     print(f"❌ Не удалось получить метаданные: {url}")
     return AppMetadata(
         url=url,
@@ -234,8 +282,8 @@ def process_form_data(form_data, files):
 
     if len(app_links) < 1:
         raise ValueError("Необходимо минимум 1 ссылку на приложение")
-    if len(app_links) > 10:
-        raise ValueError("Максимальное количество ссылок: 10")
+    if len(app_links) > 50:
+        raise ValueError("Максимальное количество ссылок: 50 (для производительности)")
 
     # Только ручные переопределения пользователя
     overrides: Dict[str, Dict[str, Any]] = {}
@@ -259,6 +307,63 @@ def process_form_data(form_data, files):
         'final_url': final_url,
         'overrides': overrides
     }
+
+
+def resolve_multiple_app_data(links: list, overrides: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """
+    Быстрое разрешение данных для нескольких ссылок одновременно.
+    Использует пакетный парсинг для ускорения в 3-5 раз.
+    """
+    results = {}
+    
+    # Определяем, для каких ссылок нужен автопарсинг
+    links_need_parsing = []
+    for link in links:
+        data = {}
+        
+        # 1) ручные overrides
+        if link in overrides:
+            data.update(overrides[link])
+        
+        # 2) проверяем, нужен ли автопарсинг
+        need_logo = ('logo_path' not in data and 'logo_bytes' not in data)
+        if 'name' not in data or 'developer' not in data or need_logo:
+            links_need_parsing.append(link)
+            
+        results[link] = data
+    
+    # Пакетный парсинг всех нужных ссылок сразу
+    if links_need_parsing:
+        print(f"🚀 Пакетный автопарсинг для {len(links_need_parsing)} ссылок...")
+        parsed_metadata = fetch_multiple_app_metadata(links_need_parsing)
+        
+        # Дополняем данные результатами парсинга
+        for link in links_need_parsing:
+            data = results[link]
+            meta = parsed_metadata.get(link)
+            
+            if meta:
+                if 'name' not in data and meta.name:
+                    data['name'] = meta.name
+                if 'developer' not in data and meta.developer:
+                    data['developer'] = meta.developer
+                
+                need_logo = ('logo_path' not in data and 'logo_bytes' not in data)
+                if need_logo and getattr(meta, 'logo_bytes', b''):
+                    data['logo_bytes'] = meta.logo_bytes
+                    data['logo_mime'] = getattr(meta, 'logo_mime', None) or sniff_mime(meta.logo_bytes, url_hint=link)
+    
+    # Финализируем все данные
+    for link, data in results.items():
+        # Если пользователь загрузил файл, но не указали mime — определим по расширению
+        if 'logo_path' in data and 'logo_mime' not in data:
+            data['logo_mime'] = mimetypes.guess_type(data['logo_path'])[0] or 'image/png'
+
+        # Гарантируем наличие базовых полей
+        data.setdefault('name', '⚠️ Требуется ручной ввод')
+        data.setdefault('developer', '⚠️ Требуется ручной ввод')
+    
+    return results
 
 
 def resolve_app_data(link: str, overrides: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
@@ -299,7 +404,7 @@ def resolve_app_data(link: str, overrides: Dict[str, Dict[str, Any]]) -> Dict[st
 
 
 def create_preview_data(industry, app_links, final_url, overrides):
-    """Создание данных для предварительного просмотра (использует resolve_app_data => как в итоговых слайдах)"""
+    """Создание данных для предварительного просмотра (БЫСТРАЯ версия с пакетным парсингом)"""
     preview_slides = []
 
     # Титульный слайд — чистый заголовок
@@ -309,10 +414,14 @@ def create_preview_data(industry, app_links, final_url, overrides):
         'image': None
     })
 
+    # БЫСТРЫЙ пакетный парсинг всех ссылок сразу
+    print(f"🚀 Быстрый предпросмотр для {len(app_links)} ссылок...")
+    all_resolved_data = resolve_multiple_app_data(app_links, overrides)
+
     # Слайды с приложениями
     for i, link in enumerate(app_links):
         slide_num = i + 1
-        resolved = resolve_app_data(link, overrides)
+        resolved = all_resolved_data[link]
 
         # Готовим лого для превью (base64) с корректным MIME
         logo_data = None
@@ -351,6 +460,7 @@ def create_preview_data(industry, app_links, final_url, overrides):
         'image': None
     })
 
+    print(f"✅ Быстрый предпросмотр готов за секунды!")
     return {'slides': preview_slides}
 
 
@@ -375,21 +485,46 @@ def generate_presentation():
             preview_data = create_preview_data(industry, app_links, final_url, overrides)
             return jsonify({'success': True, 'preview': preview_data})
 
-        # Готовим окончательные overrides для генератора (такие же, как в превью)
+        # Готовим окончательные overrides для генератора (БЫСТРАЯ версия)
+        print(f"\n� Быстрая подготовка данных для генератора презентации:")
+        print(f"   Количество ссылок: {len(app_links)}")
+        
+        # БЫСТРЫЙ пакетный парсинг всех ссылок сразу
+        all_resolved_data = resolve_multiple_app_data(app_links, overrides)
+        
         resolved_overrides: Dict[str, Dict[str, Any]] = {}
-        for link in app_links:
-            resolved = resolve_app_data(link, overrides)
+        for i, link in enumerate(app_links, 1):
+            resolved = all_resolved_data[link]
+            print(f"\n   Приложение #{i}: {link}")
+            print(f"     Название: {resolved['name']}")
+            print(f"     Разработчик: {resolved['developer']}")
+            
             ro: Dict[str, Any] = {
                 'name': resolved['name'],
                 'developer': resolved['developer']
             }
+            
+            # Логотип
+            has_logo = False
             if 'logo_path' in resolved:
                 ro['logo_path'] = resolved['logo_path']
+                print(f"     Логотип: файл {resolved['logo_path']}")
+                has_logo = True
             if 'logo_bytes' in resolved:
                 ro['logo_bytes'] = resolved['logo_bytes']
+                logo_size = len(resolved['logo_bytes']) if resolved['logo_bytes'] else 0
+                print(f"     Logo bytes: {logo_size} байт")
+                has_logo = True
             if 'logo_mime' in resolved:
                 ro['logo_mime'] = resolved['logo_mime']
+                print(f"     MIME тип: {resolved['logo_mime']}")
+                
+            if not has_logo:
+                print(f"     ⚠️ ВНИМАНИЕ: Логотип отсутствует!")
+                
             resolved_overrides[link] = ro
+            
+        print(f"\n✅ Быстрая подготовка данных завершена!")
 
         # Формат выхода
         output_format = request.form.get('format', 'pptx')

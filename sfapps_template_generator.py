@@ -320,18 +320,34 @@ def _find_logo_shape(slide) -> Optional[int]:
     int or None
         The index of the candidate shape or ``None`` if none match.
     """
+    print(f"🔍 Поиск логотипа среди {len(slide.shapes)} shapes на слайде:")
     candidates: List[Tuple[float, int]] = []
+    
     for idx, shape in enumerate(slide.shapes):
         if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
-            w = shape.width / 914400.0
-            h = shape.height / 914400.0
+            w = shape.width / 914400.0  # Convert to inches
+            h = shape.height / 914400.0  # Convert to inches
             area = w * h
+            print(f"   Shape [{idx}]: {w:.2f}\" x {h:.2f}\" (area: {area:.3f})")
+            
             if 1.0 < w < 4.0 and 1.0 < h < 4.0:
                 candidates.append((area, idx))
+                print(f"     ✅ Подходит как логотип (размер в диапазоне 1-4 дюйма)")
+            else:
+                print(f"     ❌ Не подходит (размер вне диапазона 1-4 дюйма)")
+        else:
+            shape_type_name = str(shape.shape_type).split('.')[-1] if hasattr(shape.shape_type, 'name') else str(shape.shape_type)
+            print(f"   Shape [{idx}]: {shape_type_name} (не изображение)")
+    
     if not candidates:
+        print("❌ Не найдено подходящих shapes для логотипа")
         return None
+        
     candidates.sort(reverse=True)  # Largest area first
-    return candidates[0][1]
+    selected_idx = candidates[0][1]
+    selected_area = candidates[0][0]
+    print(f"✅ Выбран shape [{selected_idx}] с площадью {selected_area:.3f}")
+    return selected_idx
 
 
 def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
@@ -355,6 +371,12 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
     number: int
         One–based sequence number to display on the slide.
     """
+    print(f"\n🎯 Обновление слайда #{number}")
+    print(f"   Приложение: {app.name}")
+    print(f"   Разработчик: {app.developer}")
+    print(f"   Logo bytes: {len(app.logo_bytes) if app.logo_bytes else 0} байт")
+    print(f"   Logo MIME: {getattr(app, 'logo_mime', 'не указан')}")
+    
     # Update text shapes
     replaced_name = False
     for shape in slide.shapes:
@@ -367,7 +389,7 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
             continue
         lowered = text.strip().lower()
         if lowered.startswith('by '):
-            shape.text = f"By {app.developer}"
+            shape.text = f"{app.developer}"
             continue
         # Replace the template app name – only the first occurrence
         if not replaced_name and text.strip():
@@ -378,34 +400,66 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
             continue
     # Update logo image
     idx = _find_logo_shape(slide)
+    print(f"🔍 Обновление логотипа для {app.name}")
+    print(f"   Индекс shape логотипа: {idx}")
+    print(f"   Размер logo_bytes: {len(app.logo_bytes) if app.logo_bytes else 0} байт")
+    print(f"   MIME тип: {getattr(app, 'logo_mime', 'не указан')}")
+    
     if idx is not None:
         pic_shape = slide.shapes[idx]
+        print(f"   Размер shape на слайде: {pic_shape.width} x {pic_shape.height}")
+        
+        if not app.logo_bytes:
+            print("⚠️ ВНИМАНИЕ: logo_bytes пустой, логотип не будет обновлен")
+            return
+            
         # Acquire the relationship id pointing to the image
         rId = pic_shape._element.blip_rId
         image_part = slide.part.related_part(rId)
+        print(f"   Relationship ID: {rId}")
+        
         # Load image into PIL to scale it down if necessary
         try:
+            print("   Загружаем изображение в PIL...")
             with Image.open(BytesIO(app.logo_bytes)) as img:
+                print(f"   Исходный размер изображения: {img.size}")
+                print(f"   Формат изображения: {img.format}")
+                
                 # Determine max bounding box in pixels based on slide
                 max_w = pic_shape.width
                 max_h = pic_shape.height
                 # Convert to pixels at 96 DPI (~ px per inch) for PIL
                 max_w_px = int(max_w * 96 / 914400)
                 max_h_px = int(max_h * 96 / 914400)
+                print(f"   Максимальный размер для логотипа: {max_w_px} x {max_h_px} px")
+                
                 # Resize while preserving aspect ratio
                 w, h = img.size
                 ratio = min(max_w_px / w, max_h_px / h)
+                print(f"   Коэффициент масштабирования: {ratio}")
+                
                 if ratio < 1.0:
                     new_size = (int(w * ratio), int(h * ratio))
                     img = img.resize(new_size, Image.LANCZOS)
+                    print(f"   Изображение изменено до: {new_size}")
+                    
                 buf = BytesIO()
                 img.save(buf, format='PNG')
                 new_bytes = buf.getvalue()
-        except Exception:
+                print(f"   Финальный размер PNG: {len(new_bytes)} байт")
+                
+        except Exception as e:
+            print(f"❌ Ошибка обработки изображения: {e}")
+            print(f"   Используем оригинальные bytes ({len(app.logo_bytes)} байт)")
             # If resizing fails, fall back to original bytes
             new_bytes = app.logo_bytes
+            
         # Overwrite the underlying image part
+        print("   Обновляем image part в презентации...")
         image_part._blob = new_bytes
+        print("✅ Логотип успешно обновлен")
+    else:
+        print("❌ Не найден shape для логотипа на слайде")
 
 
 def _update_cover_slide(slide, topic: str) -> None:
@@ -542,15 +596,31 @@ def create_presentation_from_template(
         meta = None
         if link in overrides:
             ovr = overrides[link]
+            print(f"🔍 Обработка overrides для {link}")
+            print(f"   Доступные ключи в ovr: {list(ovr.keys())}")
+            
             # Read logo bytes if provided; if not present we skip
             logo_bytes = None
             logo_mime = 'image/png'
-            if 'logo_path' in ovr and ovr['logo_path']:
+            
+            # Приоритет 1: Уже загруженные logo_bytes
+            if 'logo_bytes' in ovr and ovr['logo_bytes']:
+                logo_bytes = ovr['logo_bytes']
+                logo_mime = ovr.get('logo_mime', 'image/png')
+                print(f"   ✅ Используем logo_bytes: {len(logo_bytes)} байт, MIME: {logo_mime}")
+            # Приоритет 2: Путь к файлу
+            elif 'logo_path' in ovr and ovr['logo_path']:
                 try:
                     with open(ovr['logo_path'], 'rb') as f:
                         logo_bytes = f.read()
-                except Exception:
+                        logo_mime = ovr.get('logo_mime', 'image/png')
+                    print(f"   ✅ Загружен logo из файла: {len(logo_bytes)} байт")
+                except Exception as e:
+                    print(f"   ❌ Ошибка загрузки logo из файла: {e}")
                     logo_bytes = None
+            else:
+                print(f"   ⚠️ Логотип не найден в overrides")
+                
             meta = AppMetadata(
                 url=link,
                 name=ovr.get('name', ''),
@@ -558,6 +628,7 @@ def create_presentation_from_template(
                 logo_bytes=logo_bytes if logo_bytes else b'',
                 logo_mime=logo_mime,
             )
+            print(f"   📊 Создан AppMetadata: logo_bytes={len(meta.logo_bytes)} байт")
         else:
             fetched = fetch_app_metadata(link)
             if fetched:
