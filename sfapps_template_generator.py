@@ -66,7 +66,9 @@ from PIL import Image
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.oxml.ns import qn
+from pptx.util import Pt
 
 
 @dataclass
@@ -250,6 +252,76 @@ def fetch_app_metadata(url: str, timeout: int = 20) -> Optional[AppMetadata]:
     return AppMetadata(url=url, name=name, developer=dev, logo_bytes=logo_bytes, logo_mime=logo_mime)
 
 
+def _remove_comments_from_slides(prs: Presentation, slide_indices: List[int]) -> None:
+    """
+    Remove all comments from specified slides in the presentation.
+    
+    Parameters
+    ----------
+    prs: Presentation
+        The presentation object to operate on.
+    slide_indices: List[int]
+        Zero-based indices of slides to remove comments from.
+    """
+    print(f"🗑️ Удаление комментариев со слайдов: {[i+1 for i in slide_indices]}")
+    
+    for slide_idx in slide_indices:
+        if slide_idx < len(prs.slides):
+            slide = prs.slides[slide_idx]
+            try:
+                slide_part = slide.part
+                
+                # Найдем все отношения к комментариям (несколько вариантов поиска)
+                comment_rels = []
+                
+                print(f"   🔍 Анализ слайда {slide_idx + 1}, найдено отношений: {len(slide_part.rels)}")
+                
+                for rel_id, rel in slide_part.rels.items():
+                    rel_type = getattr(rel, 'reltype', 'unknown')
+                    print(f"     - {rel_id}: {rel_type}")
+                    
+                    # Ищем разные варианты комментариев
+                    if (hasattr(rel, 'reltype') and 
+                        ('comment' in rel_type.lower() or 
+                         'comments' in rel_type.lower() or
+                         rel_type.endswith('/comments'))):
+                        comment_rels.append(rel_id)
+                        print(f"     ✅ Найден комментарий: {rel_id} ({rel_type})")
+                
+                # Удаляем отношения к комментариям
+                for rel_id in comment_rels:
+                    try:
+                        # Получаем часть комментария перед удалением
+                        comment_part = slide_part.rels[rel_id].target_part
+                        
+                        # Удаляем отношение из слайда
+                        slide_part.drop_rel(rel_id)
+                        
+                        # Также нужно удалить часть комментария из пакета
+                        try:
+                            if hasattr(prs.part, 'package'):
+                                package = prs.part.package
+                                if hasattr(package, '_parts') and comment_part.partname in package._parts:
+                                    del package._parts[comment_part.partname]
+                        except Exception as pkg_e:
+                            print(f"   ⚠️ Не удалось удалить из пакета: {pkg_e}")
+                        
+                        print(f"   ✅ Удален комментарий {rel_id} со слайда {slide_idx + 1}")
+                        
+                    except Exception as e:
+                        print(f"   ⚠️ Ошибка удаления комментария {rel_id}: {e}")
+                
+                if not comment_rels:
+                    print(f"   ℹ️ Комментарии на слайде {slide_idx + 1} не найдены")
+                else:
+                    print(f"   ✅ Обработано {len(comment_rels)} комментариев на слайде {slide_idx + 1}")
+                    
+            except Exception as e:
+                print(f"   ⚠️ Ошибка при удалении комментариев со слайда {slide_idx + 1}: {e}")
+        else:
+            print(f"   ⚠️ Слайд {slide_idx + 1} не найден (всего слайдов: {len(prs.slides)})")
+
+
 def _clone_slide(prs: Presentation, index: int) -> None:
     """
     Clone the slide at position ``index`` and append the clone to the
@@ -386,16 +458,48 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
         if '#' in text:
             # Normalize to a single number with leading space as in the template
             shape.text = f" #{number}"
+            # Форматирование для номера: font Poppins, bold, 40pt, color #ffffff
+            for paragraph in shape.text_frame.paragraphs:
+                for run in paragraph.runs:
+                    run.font.name = 'Poppins'
+                    run.font.bold = True
+                    run.font.size = Pt(40)
+                    run.font.color.rgb = RGBColor(0xff, 0xff, 0xff)
+            # Вертикальное выравнивание по центру
+            shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             continue
         lowered = text.strip().lower()
         if lowered.startswith('by '):
             shape.text = f"{app.developer}"
+            # Форматирование для разработчика: font Poppins, 27pt, left align, color #3cc0ff
+            for paragraph in shape.text_frame.paragraphs:
+                paragraph.alignment = PP_ALIGN.LEFT
+                for run in paragraph.runs:
+                    run.font.name = 'Poppins'
+                    run.font.size = Pt(27)
+                    run.font.color.rgb = RGBColor(0x3c, 0xc0, 0xff)
+            # Вертикальное выравнивание по центру
+            shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+            # Устанавливаем минимальную ширину 200px (примерно 150pt)
+            min_width_pt = 150  # 200px ≈ 150pt
+            if shape.width < Pt(min_width_pt):
+                shape.width = Pt(min_width_pt)
             continue
         # Replace the template app name – only the first occurrence
         if not replaced_name and text.strip():
             # If the text originally came from the template it will
             # match one of the placeholder names; simply replace it.
             shape.text = app.name
+            # Форматирование для имени: font Poppins, bold, 40pt, left align, #163560
+            for paragraph in shape.text_frame.paragraphs:
+                paragraph.alignment = PP_ALIGN.LEFT
+                for run in paragraph.runs:
+                    run.font.name = 'Poppins'
+                    run.font.bold = True
+                    run.font.size = Pt(40)
+                    run.font.color.rgb = RGBColor(0x16, 0x35, 0x60)
+            # Вертикальное выравнивание по центру
+            shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             replaced_name = True
             continue
     # Update logo image
@@ -407,7 +511,11 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
     
     if idx is not None:
         pic_shape = slide.shapes[idx]
-        print(f"   Размер shape на слайде: {pic_shape.width} x {pic_shape.height}")
+        print(f"   Исходный размер shape на слайде: {pic_shape.width} x {pic_shape.height}")
+        
+        # Устанавливаем размер картинки, сохраняя пропорции
+        target_width = Pt(207)
+        target_height = Pt(161)
         
         if not app.logo_bytes:
             print("⚠️ ВНИМАНИЕ: logo_bytes пустой, логотип не будет обновлен")
@@ -425,33 +533,40 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
                 print(f"   Исходный размер изображения: {img.size}")
                 print(f"   Формат изображения: {img.format}")
                 
-                # Determine max bounding box in pixels based on slide
-                max_w = pic_shape.width
-                max_h = pic_shape.height
-                # Convert to pixels at 96 DPI (~ px per inch) for PIL
-                max_w_px = int(max_w * 96 / 914400)
-                max_h_px = int(max_h * 96 / 914400)
-                print(f"   Максимальный размер для логотипа: {max_w_px} x {max_h_px} px")
+                # Размер в пикселях для 207x161 pt при 96 DPI
+                target_w_px = int(207 * 96 / 72)  # ~276 px
+                target_h_px = int(161 * 96 / 72)  # ~215 px
+                print(f"   Целевой размер для логотипа: {target_w_px} x {target_h_px} px")
                 
-                # Resize while preserving aspect ratio
+                # Resize while preserving aspect ratio within target bounds
                 w, h = img.size
-                ratio = min(max_w_px / w, max_h_px / h)
-                print(f"   Коэффициент масштабирования: {ratio}")
+                ratio = min(target_w_px / w, target_h_px / h)
+                print(f"   Коэффициент масштабирования: {ratio:.3f}")
                 
-                if ratio < 1.0:
-                    new_size = (int(w * ratio), int(h * ratio))
-                    img = img.resize(new_size, Image.LANCZOS)
-                    print(f"   Изображение изменено до: {new_size}")
+                new_size = (int(w * ratio), int(h * ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+                print(f"   Изображение изменено до: {new_size}")
                     
                 buf = BytesIO()
                 img.save(buf, format='PNG')
                 new_bytes = buf.getvalue()
                 print(f"   Финальный размер PNG: {len(new_bytes)} байт")
                 
+                # Устанавливаем размер shape в PowerPoint, сохраняя пропорции
+                # Вычисляем конечные размеры в pt для PowerPoint
+                final_width_pt = new_size[0] * 72 / 96
+                final_height_pt = new_size[1] * 72 / 96
+                
+                pic_shape.width = Pt(final_width_pt)
+                pic_shape.height = Pt(final_height_pt)
+                print(f"   Установлены размеры shape: {final_width_pt:.1f}pt x {final_height_pt:.1f}pt")
+                
         except Exception as e:
             print(f"❌ Ошибка обработки изображения: {e}")
             print(f"   Используем оригинальные bytes ({len(app.logo_bytes)} байт)")
-            # If resizing fails, fall back to original bytes
+            # If resizing fails, fall back to original bytes, but still set target size
+            pic_shape.width = target_width
+            pic_shape.height = target_height
             new_bytes = app.logo_bytes
             
         # Overwrite the underlying image part
@@ -479,7 +594,23 @@ def _update_cover_slide(slide, topic: str) -> None:
         if not shape.has_text_frame:
             continue
         if '$industry' in shape.text:
+            # Заменяем текст
             shape.text = shape.text.replace('$industry', topic)
+            
+            # Применяем форматирование для титульного слайда
+            # font Poppins, bold, 59pt, color #3cc0ff
+            for paragraph in shape.text_frame.paragraphs:
+                paragraph.alignment = PP_ALIGN.CENTER
+                for run in paragraph.runs:
+                    run.font.name = 'Poppins'
+                    run.font.bold = True
+                    run.font.size = Pt(59)
+                    run.font.color.rgb = RGBColor(0x3c, 0xc0, 0xff)
+            
+            # Вертикальное выравнивание по центру
+            shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+                    
+            print(f"✅ Обновлен титульный слайд с темой: '{topic}'")
 
 
 def _update_closing_slide(slide, topic: str, final_url: str) -> None:
@@ -500,11 +631,48 @@ def _update_closing_slide(slide, topic: str, final_url: str) -> None:
     final_url: str
         URL to assign to the clickable logo.
     """
-    # Replace $industry in text
+    # Replace $industry in text with complex formatting
     for shape in slide.shapes:
         if shape.has_text_frame:
             if '$industry' in shape.text:
-                shape.text = shape.text.replace('$industry', topic)
+                # Создаем текст "Apps for {topic} at"
+                full_text = f"Apps for {topic} at"
+                
+                # Очищаем существующий текст
+                shape.text = ""
+                
+                # Применяем разное форматирование к разным частям текста
+                paragraph = shape.text_frame.paragraphs[0]
+                paragraph.alignment = PP_ALIGN.CENTER
+                    
+                # "Apps for " - цвет #163560
+                run1 = paragraph.add_run()
+                run1.text = "Apps for "
+                run1.font.name = 'Poppins'
+                run1.font.bold = True
+                run1.font.size = Pt(59)
+                run1.font.color.rgb = RGBColor(0x16, 0x35, 0x60)
+                
+                # "{topic}" - цвет #3cc0ff
+                run2 = paragraph.add_run()
+                run2.text = topic
+                run2.font.name = 'Poppins'
+                run2.font.bold = True
+                run2.font.size = Pt(59)
+                run2.font.color.rgb = RGBColor(0x3c, 0xc0, 0xff)
+                
+                # " at" - цвет #163560
+                run3 = paragraph.add_run()
+                run3.text = " at"
+                run3.font.name = 'Poppins'
+                run3.font.bold = True
+                run3.font.size = Pt(59)
+                run3.font.color.rgb = RGBColor(0x16, 0x35, 0x60)
+                
+                # Вертикальное выравнивание по центру
+                shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+                        
+                print(f"✅ Обновлен текст закрывающего слайда: 'Apps for {topic} at'")
     # Assign hyperlink to picture containing SFApps logo; heuristic is
     # to pick the image with a long width and small height (the pill
     # shaped button) – this is picture index 3 in the template.
@@ -680,6 +848,13 @@ def create_presentation_from_template(
     # Update closing slide
     closing_slide = prs.slides[closing_index]
     _update_closing_slide(closing_slide, topic, final_url)
+    
+    # Remove comments from specified slides
+    try:
+        _remove_comments_from_slides(prs, [0, 1, 11])  # Slides 1, 2, 12 (0-indexed)
+    except Exception as e:
+        print(f"⚠️ Ошибка при удалении комментариев: {e}")
+    
     # Save PPTX
     prs.save(output_pptx)
     # Optionally convert to PDF using LibreOffice
