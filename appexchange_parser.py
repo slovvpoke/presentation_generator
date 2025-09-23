@@ -247,7 +247,7 @@ def parse_appexchange_improved(url: str, driver=None, reuse_driver=False):
                     if logo_url:
                         print(f"ℹ️ Логотип из og:image: {logo_url}")
                 except Exception:
-                    pass
+                    print("❌ og:image тоже не найден")
         
         logo_time = time.time() - logo_start
         print(f"⏱️ Поиск логотипа: {logo_time:.2f}c")

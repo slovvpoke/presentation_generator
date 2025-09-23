@@ -431,14 +431,18 @@ def create_preview_data(industry, app_links, final_url, overrides):
                     logo_bytes = f.read()
                 mime = resolved.get('logo_mime') or mimetypes.guess_type(resolved['logo_path'])[0] or 'image/png'
                 logo_data = f"data:{mime};base64,{base64.b64encode(logo_bytes).decode()}"
-            except Exception:
-                pass
+                print(f"✅ Логотип загружен из файла для {resolved['name']}: {len(logo_bytes)} байт")
+            except Exception as e:
+                print(f"⚠️ Ошибка загрузки логотипа из файла для {resolved['name']}: {e}")
         elif 'logo_bytes' in resolved and resolved['logo_bytes']:
             try:
                 mime = resolved.get('logo_mime') or sniff_mime(resolved['logo_bytes'], url_hint=link)
                 logo_data = f"data:{mime};base64,{base64.b64encode(resolved['logo_bytes']).decode()}"
-            except Exception:
-                pass
+                print(f"✅ Логотип загружен из bytes для {resolved['name']}: {len(resolved['logo_bytes'])} байт")
+            except Exception as e:
+                print(f"⚠️ Ошибка обработки logo_bytes для {resolved['name']}: {e}")
+        else:
+            print(f"❌ Логотип не найден для {resolved['name']}: logo_path={resolved.get('logo_path')}, logo_bytes={len(resolved.get('logo_bytes', b''))} байт")
 
         preview_slides.append({
             'title': f'Приложение #{slide_num}',

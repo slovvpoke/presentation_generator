@@ -213,8 +213,8 @@ def _extract_from_html(html: str) -> Tuple[Optional[str], Optional[str], Optiona
 
 def fetch_app_metadata(url: str, timeout: int = 20) -> Optional[AppMetadata]:
     """
-    Retrieve metadata for an AppExchange listing.  If extraction or
-    download fails, ``None`` is returned.
+    Retrieve metadata for an AppExchange listing using modern Selenium parser.
+    If extraction or download fails, ``None`` is returned.
 
     Parameters
     ----------
@@ -229,27 +229,75 @@ def fetch_app_metadata(url: str, timeout: int = 20) -> Optional[AppMetadata]:
         ``AppMetadata`` containing the name, developer and logo bytes
         if successful, otherwise ``None``.
     """
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
-                      '(KHTML, like Gecko) Chrome/120.0 Safari/537.36'
-    }
+    # Импортируем современный Selenium парсер
     try:
-        resp = requests.get(url, headers=headers, timeout=timeout)
-        resp.raise_for_status()
-    except Exception:
+        from appexchange_parser import parse_appexchange_improved
+        print(f"🔄 Используем современный Selenium парсер для {url}")
+        
+        # Используем современный парсер с поддержкой Shadow DOM
+        result = parse_appexchange_improved(url)
+        
+        if not result or not result.get('success'):
+            print(f"❌ Парсер не смог извлечь данные из {url}")
+            return None
+            
+        name = result.get('name', 'Unknown App')
+        developer = result.get('developer', 'Unknown Developer')
+        logo_url = result.get('logo_url')
+        
+        print(f"✅ Selenium парсер извлек данные:")
+        print(f"   Название: {name}")
+        print(f"   Разработчик: {developer}")
+        print(f"   URL логотипа: {logo_url}")
+        
+        # Загружаем логотип
+        logo_bytes = b''
+        logo_mime = 'image/png'
+        
+        if logo_url:
+            try:
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                                  '(KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+                }
+                img_resp = requests.get(logo_url, headers=headers, timeout=timeout)
+                img_resp.raise_for_status()
+                logo_bytes = img_resp.content
+                logo_mime = img_resp.headers.get('Content-Type', 'image/png')
+                print(f"✅ Логотип загружен: {len(logo_bytes)} байт, MIME: {logo_mime}")
+            except Exception as e:
+                print(f"⚠️ Ошибка загрузки логотипа: {e}")
+                logo_bytes = b''
+        
+        return AppMetadata(url=url, name=name, developer=developer, logo_bytes=logo_bytes, logo_mime=logo_mime)
+        
+    except ImportError:
+        print(f"❌ Selenium парсер недоступен, используем fallback для {url}")
+        # Fallback на старый HTML парсер только если Selenium недоступен
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                          '(KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+        }
+        try:
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+        except Exception:
+            return None
+        name, dev, logo_url = _extract_from_html(resp.text)
+        if not name or not dev or not logo_url:
+            return None
+        # Fetch logo
+        try:
+            img_resp = requests.get(logo_url, headers=headers, timeout=timeout)
+            img_resp.raise_for_status()
+            logo_bytes = img_resp.content
+            logo_mime = img_resp.headers.get('Content-Type', 'image/png')
+        except Exception:
+            return None
+        return AppMetadata(url=url, name=name, developer=dev, logo_bytes=logo_bytes, logo_mime=logo_mime)
+    except Exception as e:
+        print(f"❌ Ошибка в fetch_app_metadata: {e}")
         return None
-    name, dev, logo_url = _extract_from_html(resp.text)
-    if not name or not dev or not logo_url:
-        return None
-    # Fetch logo
-    try:
-        img_resp = requests.get(logo_url, headers=headers, timeout=timeout)
-        img_resp.raise_for_status()
-        logo_bytes = img_resp.content
-        logo_mime = img_resp.headers.get('Content-Type', 'image/png')
-    except Exception:
-        return None
-    return AppMetadata(url=url, name=name, developer=dev, logo_bytes=logo_bytes, logo_mime=logo_mime)
 
 
 def _remove_comments_from_slides(prs: Presentation, slide_indices: List[int]) -> None:
@@ -452,7 +500,7 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
     # Update text shapes
     replaced_name = False
     for shape in slide.shapes:
-        if not shape.has_text_frame:
+не        if not shape.has_text_frame:
             continue
         text = shape.text
         if '#' in text:
@@ -849,9 +897,11 @@ def create_presentation_from_template(
     closing_slide = prs.slides[closing_index]
     _update_closing_slide(closing_slide, topic, final_url)
     
-    # Remove comments from specified slides
+    # Remove comments from specified slides (1, 2, and last slide)
     try:
-        _remove_comments_from_slides(prs, [0, 1, 11])  # Slides 1, 2, 12 (0-indexed)
+        last_slide_index = len(prs.slides) - 1  # Динамически определяем последний слайд
+        _remove_comments_from_slides(prs, [0, 1, last_slide_index])  # Slides 1, 2, и последний
+        print(f"🔍 Удаление комментариев с слайдов: 1, 2, {last_slide_index + 1} (последний)")
     except Exception as e:
         print(f"⚠️ Ошибка при удалении комментариев: {e}")
     
