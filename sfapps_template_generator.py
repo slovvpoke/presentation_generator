@@ -635,22 +635,45 @@ def _update_cover_slide(slide, topic: str) -> None:
         if not shape.has_text_frame:
             continue
         if '$industry' in shape.text:
-            shape.text = shape.text.replace('$industry', topic)
-
-            # Apply formatting for cover slide
-            # font Poppins, bold, 59pt, color #3cc0ff
-            for paragraph in shape.text_frame.paragraphs:
-                paragraph.alignment = PP_ALIGN.CENTER
-                for run in paragraph.runs:
-                    run.font.name = 'Poppins'
-                    run.font.bold = True
-                    run.font.size = Pt(59)
-                    run.font.color.rgb = RGBColor(0x3c, 0xc0, 0xff)
-
+            # Clear existing text
+            shape.text = ""
+            
+            # Create multi-line text with different colors
+            paragraph = shape.text_frame.paragraphs[0]
+            paragraph.alignment = PP_ALIGN.CENTER
+            
+            # "Best Apps for " - color #163560 (dark blue)
+            run1 = paragraph.add_run()
+            run1.text = "Best Apps for "
+            run1.font.name = 'Poppins'
+            run1.font.bold = True
+            run1.font.size = Pt(59)
+            run1.font.color.rgb = RGBColor(0x16, 0x35, 0x60)
+            
+            # "{topic}" - color #3cc0ff (light blue)
+            run2 = paragraph.add_run()
+            run2.text = topic
+            run2.font.name = 'Poppins'
+            run2.font.bold = True
+            run2.font.size = Pt(59)
+            run2.font.color.rgb = RGBColor(0x3c, 0xc0, 0xff)
+            
+            # Add new line for second part
+            run3 = paragraph.add_run()
+            run3.text = "\n"
+            
+            # "Available on " - color #163560 (dark blue)
+            run4 = paragraph.add_run()
+            run4.text = "Available on "
+            run4.font.name = 'Poppins'
+            run4.font.bold = True
+            run4.font.size = Pt(59)
+            run4.font.color.rgb = RGBColor(0x16, 0x35, 0x60)
+            
             # Vertical alignment to middle
             shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
 
-            print(f"✅ Updated cover slide with topic: '{topic}'")
+            print(f"✅ Updated cover slide with topic: 'Best Apps for {topic}\\nAvailable on AppExchange'")
 
 
 def _update_closing_slide(slide, topic: str, final_url: str) -> None:
