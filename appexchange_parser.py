@@ -84,6 +84,103 @@ def find_element_deep(driver, selector: str, timeout: int = 3):
     )
 
 
+def parse_appexchange_simple(url: str):
+    """Simple HTTP-based parser as fallback when Selenium fails"""
+    print("🔄 Using simple HTTP parser as fallback...")
+    
+    try:
+        # Headers to mimic a real browser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        html = response.text
+        
+        # Try to extract name from title tag
+        name_match = re.search(r'<title[^>]*>([^|]+)', html, re.IGNORECASE)
+        name = name_match.group(1).strip() if name_match else "Manual input required"
+        
+        # Also try to extract from JSON data if available
+        json_match = re.search(r'"name"\s*:\s*"([^"]+)"', html)
+        if json_match and json_match.group(1) != name:
+            name = json_match.group(1).strip()
+        
+        # Try to extract from meta description or page content
+        desc_match = re.search(r'<meta[^>]*name=["\']description["\'][^>]*content=["\']([^"\']+)', html, re.IGNORECASE)
+        description = desc_match.group(1).strip() if desc_match else "Manual input required"
+        
+        # Also try from JSON data
+        json_desc = re.search(r'"description"\s*:\s*"([^"]+)"', html)
+        if json_desc:
+            description = json_desc.group(1).strip()
+        
+        # Try to find developer/company info
+        # Look for publisher/company in JSON data first
+        company_patterns = [
+            r'"publisher"\s*:\s*"[^"]*"[^}]*"name"\s*:\s*"([^"]+)"',
+            r'"company"\s*:\s*"([^"]+)"',
+            r'"developer"\s*:\s*"([^"]+)"',
+            r'"publisher"\s*:\s*"([^"]+)"',
+            r'by\s+([^<>\n]+)',
+            r'Company[:\s]+([^<>\n]+)',
+            r'Developer[:\s]+([^<>\n]+)',
+        ]
+        
+        company = "Manual input required"
+        for pattern in company_patterns:
+            match = re.search(pattern, html, re.IGNORECASE)
+            if match:
+                company = match.group(1).strip()
+                # Clean up common suffixes
+                if len(company) > 5:  # Only use if reasonable length
+                    break
+        
+        # Try to find logo from JSON data
+        logo_patterns = [
+            r'"Logo"\s*:\s*"([^"]+)"',
+            r'"logo_url"\s*:\s*"([^"]+)"',
+            r'"Big Logo"\s*:\s*"([^"]+)"',
+            r'<img[^>]*src=["\']([^"\']*logo[^"\']*)["\']',
+            r'<img[^>]*src=["\']([^"\']*icon[^"\']*)["\']',
+        ]
+        
+        logo_url = None
+        for pattern in logo_patterns:
+            match = re.search(pattern, html, re.IGNORECASE)
+            if match:
+                logo_url = match.group(1)
+                if logo_url and not logo_url.startswith('http'):
+                    logo_url = f"https://appexchange.salesforce.com{logo_url}"
+                break
+        
+        return {
+            'name': name,
+            'developer': company,
+            'description': description,
+            'logo_url': logo_url,
+            'success': True,
+            'parsed_with': 'simple_http'
+        }
+        
+    except Exception as e:
+        print(f"❌ Simple parser failed: {e}")
+        return {
+            'name': 'Manual input required',
+            'developer': 'Manual input required', 
+            'description': 'Manual input required',
+            'logo_url': None,
+            'success': False,
+            'parsed_with': 'simple_http_failed'
+        }
+
+
 def parse_appexchange_improved(url: str, driver=None, reuse_driver=False):
 
     cached_result = _load_from_cache(url)
@@ -111,10 +208,15 @@ def parse_appexchange_improved(url: str, driver=None, reuse_driver=False):
 
     try:
         if not driver_was_provided:
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            driver_init_time = time.time() - driver_start
+            try:
+                service = Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                driver_init_time = time.time() - driver_start
+            except Exception as chrome_error:
+                print(f"❌ ChromeDriver failed: {chrome_error}")
+                print("🔄 Trying simple HTTP parser as fallback...")
+                return parse_appexchange_simple(url)
 
         nav_start = time.time()
         driver.get(url)

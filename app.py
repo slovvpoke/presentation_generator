@@ -156,7 +156,21 @@ def fetch_multiple_app_metadata(urls: list) -> Dict[str, AppMetadata]:
         return b"", "image/png"
     
     # Batch parsing of all URLs
-    parse_results = parse_multiple_appexchange_urls(urls)
+    # Parse each URL individually with fallback
+    parse_results = {}
+    for url in urls:
+        try:
+            result = parse_appexchange_improved(url)
+            parse_results[url] = result
+        except Exception as e:
+            print(f"❌ Failed to parse {url}: {e}")
+            parse_results[url] = {
+                'name': 'Manual input required',
+                'developer': 'Manual input required', 
+                'description': 'Manual input required',
+                'logo_url': None,
+                'success': False
+            }
     
     # Parallel logo downloads
     logo_downloads = {}
