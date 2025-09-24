@@ -460,7 +460,7 @@ def _remove_developer_background(slide, text_left, text_top, text_height):
     print(f"   🗑️ Searching for blue background to remove...")
     print(f"      Text position: left={text_left/914400:.1f}in, top={text_top/914400:.1f}in")
     
-    tolerance = Pt(50).emu  # 50pt tolerance for position matching
+    tolerance = Pt(100).emu  # Increased tolerance for position matching
     shapes_to_remove = []
     
     for idx, shape in enumerate(slide.shapes):
@@ -468,48 +468,63 @@ def _remove_developer_background(slide, text_left, text_top, text_height):
         if shape.has_text_frame:
             continue
             
+        print(f"      Checking shape [{idx}]:")
+        print(f"        Position: left={shape.left/914400:.1f}in, top={shape.top/914400:.1f}in")
+        print(f"        Size: {shape.width/914400:.1f}in x {shape.height/914400:.1f}in")
+        
         # Check if shape is close to text position (likely background)
         left_diff = abs(shape.left - text_left)
         top_diff = abs(shape.top - text_top)
         height_diff = abs(shape.height - text_height)
         
-        # Must be close in position and similar height
-        if left_diff < tolerance and top_diff < tolerance and height_diff < tolerance:
-            print(f"      Found potential background shape [{idx}]:")
-            print(f"        Position: left={shape.left/914400:.1f}in, top={shape.top/914400:.1f}in")
-            print(f"        Size: {shape.width/914400:.1f}in x {shape.height/914400:.1f}in")
+        print(f"        Position differences: left={left_diff/914400:.1f}in, top={top_diff/914400:.1f}in, height={height_diff/914400:.1f}in")
+        
+        # More relaxed matching - check if it's near the text area
+        if left_diff < tolerance and top_diff < tolerance:
+            print(f"        ✅ Shape is near developer text area")
             
-            # Check if it has a blue-ish fill color
+            # Check if it has any fill color (not just blue)
+            has_fill = False
             try:
-                if hasattr(shape, 'fill') and hasattr(shape.fill, 'fore_color'):
-                    fill_color = shape.fill.fore_color
-                    if hasattr(fill_color, 'rgb'):
-                        r, g, b = fill_color.rgb.r, fill_color.rgb.g, fill_color.rgb.b
-                        print(f"        Fill color: RGB({r}, {g}, {b})")
+                if hasattr(shape, 'fill'):
+                    if hasattr(shape.fill, 'type') and shape.fill.type is not None:
+                        has_fill = True
+                        print(f"        Shape has fill type: {shape.fill.type}")
                         
-                        # Check for light blue colors (typical background colors)
-                        if (150 <= r <= 255 and 180 <= g <= 255 and 200 <= b <= 255) or \
-                           (0 <= r <= 100 and 180 <= g <= 255 and 220 <= b <= 255):
-                            print(f"        ✅ Identified as blue background - marking for removal")
-                            shapes_to_remove.append(shape)
-                            continue
+                        if hasattr(shape.fill, 'fore_color') and hasattr(shape.fill.fore_color, 'rgb'):
+                            r, g, b = shape.fill.fore_color.rgb.r, shape.fill.fore_color.rgb.g, shape.fill.fore_color.rgb.b
+                            print(f"        Fill color: RGB({r}, {g}, {b})")
+                            
+                            # Check for any blue-ish colors (light blue, cyan, etc)
+                            if (b > 150 and b > r and b > g) or \
+                               (g > 150 and b > 150) or \
+                               (150 <= r <= 255 and 180 <= g <= 255 and 200 <= b <= 255):
+                                print(f"        ✅ Identified as colored background - marking for removal")
+                                shapes_to_remove.append(shape)
+                                continue
+                
+                # If shape is near text but we can't determine color, remove it anyway
+                if has_fill or not shape.has_text_frame:
+                    print(f"        🔄 Shape near developer text without text - assuming background")
+                    shapes_to_remove.append(shape)
+                    
             except Exception as e:
-                print(f"        ⚠️ Could not check fill color: {e}")
-                # If we can't check color but position matches, assume it's the background
+                print(f"        ⚠️ Could not check fill properties: {e}")
+                # If we can't check properties but position matches, assume it's the background
                 print(f"        🔄 Assuming background based on position - marking for removal")
                 shapes_to_remove.append(shape)
-                continue
     
     # Remove the identified shapes
     if shapes_to_remove:
-        for shape in shapes_to_remove:
+        print(f"      Found {len(shapes_to_remove)} shapes to remove")
+        for i, shape in enumerate(shapes_to_remove):
             try:
                 slide.shapes._spTree.remove(shape._element)
-                print(f"        ✅ Blue background removed successfully")
+                print(f"        ✅ Background shape {i+1} removed successfully")
             except Exception as e:
-                print(f"        ❌ Failed to remove background: {e}")
+                print(f"        ❌ Failed to remove background shape {i+1}: {e}")
     else:
-        print(f"      ❌ No blue background shape found near developer text")
+        print(f"      ❌ No background shapes found near developer text")
 
 
 def _update_developer_background(slide, text_left, text_top, text_height, target_width):
