@@ -1,0 +1,29 @@
+services:services:
+
+  - type: web  - type: web
+
+    name: presentation-generator    name: presentation-generator
+
+    env: docker    env: docker
+
+    plan: free    plan: free
+
+    dockerfilePath: ./Dockerfile    dockerfilePath: ./Dockerfile
+
+    envVars:    envVars:
+
+      - key: RENDER      - key: RENDER
+
+        value: "true"        value: "true"
+
+      - key: PYTHON_VERSION      - key: PYTHON_VERSION
+
+        value: "3.9"        value: "3.9"
+
+      - key: CHROME_BIN      - key: CHROME_BIN
+
+        value: "/usr/bin/google-chrome"        value: "/usr/bin/google-chrome"
+
+    buildCommand: ""    buildCommand: ""
+
+    startCommand: "gunicorn --bind 0.0.0.0:10000 --workers 1 --timeout 120 app:app"    startCommand: "gunicorn --bind 0.0.0.0:10000 --workers 1 --timeout 300 --worker-class sync app:app"
