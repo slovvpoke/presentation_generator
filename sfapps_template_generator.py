@@ -439,6 +439,79 @@ def _calculate_text_width(text, font_size, font_name='Poppins', bold=False):
     return base_width + padding
 
 
+def _remove_developer_background(slide, text_left, text_top, text_height):
+    """
+    Find and remove the blue background shape behind developer text
+    
+    Parameters
+    ----------
+    slide: pptx.slide.Slide
+        The slide containing the shapes
+    text_left: int
+        Left position of the text field (in EMU)
+    text_top: int
+        Top position of the text field (in EMU)
+    text_height: int
+        Height of the text field (in EMU)
+    """
+    from pptx.dml.color import RGBColor
+    from pptx.util import Pt
+    
+    print(f"   🗑️ Searching for blue background to remove...")
+    print(f"      Text position: left={text_left/914400:.1f}in, top={text_top/914400:.1f}in")
+    
+    tolerance = Pt(50).emu  # 50pt tolerance for position matching
+    shapes_to_remove = []
+    
+    for idx, shape in enumerate(slide.shapes):
+        # Skip text frames
+        if shape.has_text_frame:
+            continue
+            
+        # Check if shape is close to text position (likely background)
+        left_diff = abs(shape.left - text_left)
+        top_diff = abs(shape.top - text_top)
+        height_diff = abs(shape.height - text_height)
+        
+        # Must be close in position and similar height
+        if left_diff < tolerance and top_diff < tolerance and height_diff < tolerance:
+            print(f"      Found potential background shape [{idx}]:")
+            print(f"        Position: left={shape.left/914400:.1f}in, top={shape.top/914400:.1f}in")
+            print(f"        Size: {shape.width/914400:.1f}in x {shape.height/914400:.1f}in")
+            
+            # Check if it has a blue-ish fill color
+            try:
+                if hasattr(shape, 'fill') and hasattr(shape.fill, 'fore_color'):
+                    fill_color = shape.fill.fore_color
+                    if hasattr(fill_color, 'rgb'):
+                        r, g, b = fill_color.rgb.r, fill_color.rgb.g, fill_color.rgb.b
+                        print(f"        Fill color: RGB({r}, {g}, {b})")
+                        
+                        # Check for light blue colors (typical background colors)
+                        if (150 <= r <= 255 and 180 <= g <= 255 and 200 <= b <= 255) or \
+                           (0 <= r <= 100 and 180 <= g <= 255 and 220 <= b <= 255):
+                            print(f"        ✅ Identified as blue background - marking for removal")
+                            shapes_to_remove.append(shape)
+                            continue
+            except Exception as e:
+                print(f"        ⚠️ Could not check fill color: {e}")
+                # If we can't check color but position matches, assume it's the background
+                print(f"        🔄 Assuming background based on position - marking for removal")
+                shapes_to_remove.append(shape)
+                continue
+    
+    # Remove the identified shapes
+    if shapes_to_remove:
+        for shape in shapes_to_remove:
+            try:
+                slide.shapes._spTree.remove(shape._element)
+                print(f"        ✅ Blue background removed successfully")
+            except Exception as e:
+                print(f"        ❌ Failed to remove background: {e}")
+    else:
+        print(f"      ❌ No blue background shape found near developer text")
+
+
 def _update_developer_background(slide, text_left, text_top, text_height, target_width):
     """
     Find and update the blue background shape behind developer text
@@ -631,8 +704,8 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
             # Update text field width
             shape.width = Pt(optimal_width)
             
-            # Find and update blue background shape
-            _update_developer_background(slide, dev_text_left, dev_text_top, dev_text_height, optimal_width)
+            # Remove blue background shape behind developer text
+            _remove_developer_background(slide, dev_text_left, dev_text_top, dev_text_height)
             
             print(f"   📏 Developer field sizing:")
             print(f"      Text: '{app.developer}' ({len(app.developer)} chars)")
