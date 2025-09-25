@@ -903,7 +903,7 @@ def _update_closing_slide(slide, topic: str, final_url: str) -> None:
 
                 # Apply formatting for different parts of the text
                 paragraph = shape.text_frame.paragraphs[0]
-                paragraph.alignment = PP_ALIGN.CENTER
+                paragraph.alignment = PP_ALIGN.RIGHT
 
                 # "Apps for " - color #163560
                 run1 = paragraph.add_run()
