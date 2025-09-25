@@ -671,6 +671,10 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
     print(f"   Logo bytes: {len(app.logo_bytes) if app.logo_bytes else 0} bytes")
     print(f"   Logo MIME: {getattr(app, 'logo_mime', 'not specified')}")
     
+    # Store references to app name and developer shapes for position adjustment
+    app_name_shape = None
+    developer_shape = None
+    
     # Update text shapes
     replaced_name = False
     for shape in slide.shapes:
@@ -692,6 +696,7 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
             continue
         lowered = text.strip().lower()
         if lowered.startswith('by '):
+            developer_shape = shape  # Store reference
             shape.text = f"{app.developer}"
             # Formatting for developer: font Poppins, 27pt, left align, color #3cc0ff
             for paragraph in shape.text_frame.paragraphs:
@@ -729,6 +734,7 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
             continue
         # Replace the template app name – only the first occurrence
         if not replaced_name and text.strip():
+            app_name_shape = shape  # Store reference
             # If the text originally came from the template it will
             # match one of the placeholder names; simply replace it.
             shape.text = app.name
@@ -743,7 +749,42 @@ def _update_slide_fields(slide, app: AppMetadata, number: int) -> None:
             # Vertical alignment to middle
             shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             replaced_name = True
+            shape.width = Pt(450)  # Set a reasonable width for app name
             continue
+    
+    # Check for overlap and adjust developer position if needed
+    if app_name_shape and developer_shape:
+        app_name_right = app_name_shape.left + app_name_shape.width
+        dev_left = developer_shape.left
+        
+        # Add buffer zone - only move if there's significant overlap (at least 20pt)
+        buffer_zone = Pt(20)  # 20pt buffer to avoid moving for minor overlaps
+        
+        # Check if both shapes are on the same horizontal line (similar top positions)
+        app_name_top = app_name_shape.top
+        dev_top = developer_shape.top
+        vertical_tolerance = Pt(200)  # 200pt tolerance for "same line" (increased from 100pt)
+        
+        on_same_line = abs(app_name_top - dev_top) < vertical_tolerance
+        
+        # If app name extends significantly beyond developer's left position AND they're on same line
+        if on_same_line and app_name_right > (dev_left + buffer_zone):
+            offset_down = Pt(60)  # Move developer 60pt down
+            developer_shape.top += offset_down
+            print(f"   🔽 App name overlaps developer - moving developer down by {offset_down}")
+            print(f"      App name right edge: {app_name_right/914400:.2f}in")
+            print(f"      Developer left edge: {dev_left/914400:.2f}in")
+            print(f"      Overlap amount: {(app_name_right - dev_left)/914400:.2f}in")
+            print(f"      Developer moved to: {developer_shape.top/914400:.2f}in")
+        else:
+            print(f"   ✅ No significant overlap detected:")
+            print(f"      App name right edge: {app_name_right/914400:.2f}in")
+            print(f"      Developer left edge: {dev_left/914400:.2f}in")
+            if on_same_line:
+                print(f"      Gap: {(dev_left - app_name_right)/914400:.2f}in")
+            else:
+                print(f"      Not on same line (vertical difference: {abs(app_name_top - dev_top)/914400:.2f}in)")
+    
     # Update logo image
     idx = _find_logo_shape(slide)
     print(f"🔍 Updating logo for {app.name}")
